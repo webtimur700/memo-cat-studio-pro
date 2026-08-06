@@ -1,3 +1,6 @@
+from dataclasses import dataclass, field
+from PySide6.QtGui import QColor
+
 dataclass(frozen=True, slots=True)
 class Palette:
     background: QColor = field(default_factory=lambda: QColor(18, 18, 22))
