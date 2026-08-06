@@ -84,7 +84,13 @@ sudo dnf install -y \
     python3.12 python3.12-devel python3-pip \
     libva libva-utils vulkan-tools \
     mesa-vulkan-drivers mesa-va-drivers \
-    qt6-qtbase-devel
+    qt6-qtbase-devel\
+    qt6-qtmultimedia\ 
+    qt6-qtmultimedia-devel\
+    gstreamer1-plugins-base\
+    gstreamer1-plugins-good\
+    gstreamer1-plugins-bad-free\
+    gstreamer1-libav\
 ok "Системные зависимости установлены"
 
 # ------------------------------------------------------------
