@@ -14,6 +14,12 @@ authors = [{ name = "Memo Cat AI Studio" }]
 # ВАЖНО: версии зафиксированы намеренно (не "*", не "latest"), чтобы сборка
 # на конкретной машине (Ryzen 7 8845HS / Radeon 780M / Bazzite) была воспроизводимой.
 dependencies = [
+    "ultralytics==8.3.28",
+    "onnxscript",          
+    "onnx>=1.12.0",       
+    "onnxslim",           
+    "PySide6-Essentials>=6.6.0",
+    "numpy>=1.26.0",
     # --- UI ---
     "PySide6==6.7.2",
 
