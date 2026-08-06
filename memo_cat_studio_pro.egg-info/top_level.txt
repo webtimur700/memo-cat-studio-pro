@@ -1,0 +1,10 @@
+animation
+core
+effects
+export
+llm
+plugins
+subtitles
+ui
+video
+vision
