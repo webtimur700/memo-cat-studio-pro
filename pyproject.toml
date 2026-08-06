@@ -26,6 +26,7 @@ dependencies = [
     #     Vulkan/ROCm EP пробуются в рантайме, если бинарник onnxruntime собран с ними —
     #     см. честный комментарий в vision/compute_backend.py на Шаге 6) ---
     "onnxruntime>=1.18",
+    "onnxscript",
     "ultralytics>=8.3",              # используется для экспорта YOLO11 в ONNX, не для инференса
     "mediapipe>=0.10",
 
