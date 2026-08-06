@@ -33,6 +33,16 @@ def export_yolo11_to_onnx() -> None:
         sys.exit(1)
 
     print("Скачивание весов YOLO11n и экспорт в ONNX...")
+    
+    # Проверяем наличие onnxscript перед экспортом
+    try:
+        import onnxscript  # noqa: F401
+    except ImportError:
+        print("Установка недостающего пакета onnxscript...")
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "onnxscript"])
+        print("onnxscript установлен, продолжаем...")
+    
     model = YOLO("yolo11n.pt")
     exported_path = model.export(format="onnx")
 
