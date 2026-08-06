@@ -1,0 +1,95 @@
+"""Клиент к локальному серверу LM Studio (OpenAI-совместимый API,
+`http://localhost:1234/v1` по умолчанию — см. .env.example).
+
+Реализовано через стандартную библиотеку (`urllib.request`), а не httpx —
+это единственный HTTP-вызов во всём проекте, тянуть отдельную зависимость
+ради него не оправдано, а urllib позволяет протестировать клиент вживую
+против настоящего локального HTTP-сервера прямо в CI/песочнице без сети
+наружу (см. tests/integration/test_lm_studio_provider.py).
+"""
+
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+from loguru import logger
+
+from core.exceptions import MemoCatError
+from core.interfaces.llm_provider import LLMProvider
+
+
+class LLMRequestError(MemoCatError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class LMStudioConfig:
+    base_url: str = "http://localhost:1234/v1"
+    timeout_sec: float = 120.0
+    model_override: str | None = None
+
+
+class LMStudioProvider(LLMProvider):
+    def __init__(self, config: LMStudioConfig | None = None) -> None:
+        self._config = config or LMStudioConfig()
+
+    def list_models(self) -> list[str]:
+        url = f"{self._config.base_url}/models"
+        try:
+            request = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(request, timeout=self._config.timeout_sec) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise LLMRequestError(
+                f"Не удалось получить список моделей LM Studio по {url}: {exc}. "
+                f"Убедитесь, что в LM Studio запущен Local Server (вкладка Developer)."
+            ) from exc
+
+        return [model["id"] for model in payload.get("data", [])]
+
+    def _resolve_model(self) -> str:
+        if self._config.model_override:
+            return self._config.model_override
+
+        available = self.list_models()
+        if not available:
+            raise LLMRequestError(
+                "В LM Studio не загружено ни одной модели. Загрузите модель во "
+                "вкладке Developer/Local Server перед генерацией контента."
+            )
+        # LM Studio отдаёт список из фактически загруженных моделей — берём
+        # первую, а не гадаем: это ровно та модель, что видна на скриншоте
+        # пользователя в LM Studio ("Currently Loaded").
+        return available[0]
+
+    def complete(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+        model = self._resolve_model()
+        url = f"{self._config.base_url}/chat/completions"
+
+        body = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.8,
+        }).encode("utf-8")
+
+        request = urllib.request.Request(
+            url, data=body, method="POST", headers={"Content-Type": "application/json"}
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=self._config.timeout_sec) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise LLMRequestError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
+
+        try:
+            return payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError) as exc:
+            raise LLMRequestError(f"Неожиданный формат ответа LM Studio: {payload}") from exc

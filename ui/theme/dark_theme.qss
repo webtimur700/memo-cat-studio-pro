@@ -1,0 +1,174 @@
+/* Тёмная тема Memo Cat AI Studio Pro — минимализм, приглушённые поверхности,
+   один акцентный цвет (фиолетовый), без ярких системных синих/серых Qt по умолчанию. */
+
+* {
+    font-family: "Inter", "Noto Sans", "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #ebebf0;
+}
+
+QMainWindow, QWidget#centralWidget {
+    background-color: #121216;
+}
+
+/* --- Боковая панель навигации --- */
+QWidget#sidebar {
+    background-color: #17171c;
+    border-right: 1px solid #26262e;
+}
+
+QPushButton#navButton {
+    text-align: left;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background-color: transparent;
+    color: #96969a;
+}
+
+QPushButton#navButton:hover {
+    background-color: #1f1f26;
+    color: #ebebf0;
+}
+
+QPushButton#navButton:checked {
+    background-color: rgba(124, 92, 255, 0.16);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* --- Карточки / панели --- */
+QWidget#surfaceCard {
+    background-color: #1c1c22;
+    border: 1px solid #26262e;
+    border-radius: 12px;
+}
+
+/* --- Кнопки --- */
+QPushButton {
+    background-color: #26262e;
+    border: 1px solid #32323b;
+    border-radius: 8px;
+    padding: 8px 16px;
+}
+
+QPushButton:hover {
+    background-color: #2e2e38;
+}
+
+QPushButton:pressed {
+    background-color: #232329;
+}
+
+QPushButton#primaryButton {
+    background-color: #7c5cff;
+    border: none;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton#primaryButton:hover {
+    background-color: #8b6dff;
+}
+
+QPushButton#primaryButton:disabled {
+    background-color: #3a3a44;
+    color: #6e6e78;
+}
+
+/* --- Поля ввода --- */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+    background-color: #1c1c22;
+    border: 1px solid #32323b;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 1px solid #7c5cff;
+}
+
+/* --- Слайдеры (используются в настройках AI Zoom, viral threshold и т.д.) --- */
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #32323b;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    background: #7c5cff;
+    width: 14px;
+    height: 14px;
+    margin: -5px 0;
+    border-radius: 7px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #7c5cff;
+    border-radius: 2px;
+}
+
+/* --- Таблицы (Batch Queue View) --- */
+QTableWidget {
+    background-color: #1c1c22;
+    gridline-color: #26262e;
+    border: none;
+    selection-background-color: rgba(124, 92, 255, 0.2);
+}
+
+QHeaderView::section {
+    background-color: #17171c;
+    color: #96969a;
+    padding: 6px;
+    border: none;
+    border-bottom: 1px solid #26262e;
+}
+
+QProgressBar {
+    background-color: #26262e;
+    border-radius: 6px;
+    text-align: center;
+    color: #ebebf0;
+}
+
+QProgressBar::chunk {
+    background-color: #7c5cff;
+    border-radius: 6px;
+}
+
+/* --- Скроллбары --- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+}
+
+QScrollBar::handle:vertical {
+    background: #32323b;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #40404b;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* --- Таб-бар (переключение видов) --- */
+QTabWidget::pane {
+    border: none;
+}
+
+QTabBar::tab {
+    background: transparent;
+    color: #96969a;
+    padding: 8px 14px;
+    border-bottom: 2px solid transparent;
+}
+
+QTabBar::tab:selected {
+    color: #ffffff;
+    border-bottom: 2px solid #7c5cff;
+}

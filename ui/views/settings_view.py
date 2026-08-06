@@ -1,0 +1,178 @@
+"""Экран настроек (Функция 19): длина Shorts, стиль субтитров, стиль плашки,
+положение логотипа, уровень AI Zoom, качество экспорта.
+
+Работает напрямую с core.entities.settings.UserSettings (immutable dataclass) —
+при любом изменении собирается новый UserSettings через with_field() и
+эмитится наружу (settings_saved), где viewmodel сохранит его в SQLite через
+database/repositories/settings_repository.py (Шаг 6-7).
+"""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
+from PySide6.QtCore import Qt
+
+from core.entities.settings import UserSettings
+from ui.widgets.glass_panel import GlassPanel
+
+SUBTITLE_STYLE_PRESETS = ["modern_bold", "minimal_clean", "neon_pop", "classic_yellow"]
+LOGO_POSITIONS = ["top_right", "top_left", "bottom_right", "bottom_left"]
+BANNER_POSITIONS = ["bottom_center", "top_center", "bottom_left", "bottom_right"]
+QUALITY_PRESETS = ["low", "medium", "high"]
+
+
+class SettingsView(QWidget):
+    settings_saved = Signal(object)  # UserSettings
+
+    def __init__(self, initial_settings: UserSettings, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._settings = initial_settings
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(24, 24, 24, 24)
+        root_layout.setSpacing(16)
+
+        card = GlassPanel(self, corner_radius=16)
+        form = QFormLayout(card)
+        form.setContentsMargins(20, 20, 20, 20)
+        form.setSpacing(14)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        # --- Длина Shorts ---
+        self._durations_row = QWidget()
+        durations_layout = QVBoxLayout(self._durations_row)
+        durations_layout.setContentsMargins(0, 0, 0, 0)
+        self._duration_checkboxes: dict[int, QCheckBox] = {}
+        checkboxes_container = QWidget()
+        from PySide6.QtWidgets import QHBoxLayout
+
+        checkboxes_layout = QHBoxLayout(checkboxes_container)
+        checkboxes_layout.setContentsMargins(0, 0, 0, 0)
+        for duration in (15, 20, 30, 35, 45, 60):
+            checkbox = QCheckBox(f"{duration}с")
+            checkbox.setChecked(duration in initial_settings.shorts.allowed_durations_sec)
+            checkbox.stateChanged.connect(self._on_field_changed)
+            self._duration_checkboxes[duration] = checkbox
+            checkboxes_layout.addWidget(checkbox)
+        durations_layout.addWidget(checkboxes_container)
+        form.addRow(QLabel("Длина Shorts"), self._durations_row)
+
+        # --- Viral Score Threshold ---
+        self._threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self._threshold_slider.setRange(0, 100)
+        self._threshold_slider.setValue(initial_settings.viral_score.queue_threshold)
+        self._threshold_value_label = QLabel(str(initial_settings.viral_score.queue_threshold))
+        self._threshold_slider.valueChanged.connect(
+            lambda v: self._threshold_value_label.setText(str(v))
+        )
+        self._threshold_slider.valueChanged.connect(self._on_field_changed)
+        threshold_row = QWidget()
+        threshold_layout = self._build_slider_row(self._threshold_slider, self._threshold_value_label)
+        form.addRow(QLabel("Порог Viral Score для очереди"), threshold_layout)
+
+        # --- Стиль субтитров ---
+        self._subtitle_style_combo = QComboBox()
+        self._subtitle_style_combo.addItems(SUBTITLE_STYLE_PRESETS)
+        self._subtitle_style_combo.setCurrentText(initial_settings.subtitles.style_preset)
+        self._subtitle_style_combo.currentTextChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Стиль субтитров"), self._subtitle_style_combo)
+
+        # --- Стиль/положение рекламной плашки ---
+        self._banner_position_combo = QComboBox()
+        self._banner_position_combo.addItems(BANNER_POSITIONS)
+        self._banner_position_combo.setCurrentText(initial_settings.branding.banner_position)
+        self._banner_position_combo.currentTextChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Положение рекламной плашки"), self._banner_position_combo)
+
+        # --- Положение логотипа ---
+        self._logo_position_combo = QComboBox()
+        self._logo_position_combo.addItems(LOGO_POSITIONS)
+        self._logo_position_combo.setCurrentText(initial_settings.branding.logo_position)
+        self._logo_position_combo.currentTextChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Положение логотипа"), self._logo_position_combo)
+
+        # --- AI Zoom ---
+        self._ai_zoom_checkbox = QCheckBox("Включить AI Zoom")
+        self._ai_zoom_checkbox.setChecked(initial_settings.reframe.ai_zoom_enabled)
+        self._ai_zoom_checkbox.stateChanged.connect(self._on_field_changed)
+
+        self._zoom_factor_slider = QSlider(Qt.Orientation.Horizontal)
+        self._zoom_factor_slider.setRange(10, 30)  # 1.0x - 3.0x, шаг 0.1
+        self._zoom_factor_slider.setValue(int(initial_settings.reframe.max_zoom_factor * 10))
+        self._zoom_factor_label = QLabel(f"{initial_settings.reframe.max_zoom_factor:.1f}x")
+        self._zoom_factor_slider.valueChanged.connect(
+            lambda v: self._zoom_factor_label.setText(f"{v / 10:.1f}x")
+        )
+        self._zoom_factor_slider.valueChanged.connect(self._on_field_changed)
+
+        zoom_container = QWidget()
+        zoom_layout = QVBoxLayout(zoom_container)
+        zoom_layout.setContentsMargins(0, 0, 0, 0)
+        zoom_layout.addWidget(self._ai_zoom_checkbox)
+        zoom_layout.addWidget(self._build_slider_row(self._zoom_factor_slider, self._zoom_factor_label))
+        form.addRow(QLabel("AI Zoom"), zoom_container)
+
+        # --- Качество экспорта ---
+        self._quality_combo = QComboBox()
+        self._quality_combo.addItems(QUALITY_PRESETS)
+        self._quality_combo.setCurrentText(initial_settings.export.quality_preset)
+        self._quality_combo.currentTextChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Качество экспорта"), self._quality_combo)
+
+        self._save_button = QPushButton("Сохранить настройки")
+        self._save_button.setObjectName("primaryButton")
+        self._save_button.setEnabled(False)
+        self._save_button.clicked.connect(self._on_save_clicked)
+
+        root_layout.addWidget(card)
+        root_layout.addWidget(self._save_button)
+        root_layout.addStretch()
+
+    @staticmethod
+    def _build_slider_row(slider: QSlider, value_label: QLabel) -> QWidget:
+        from PySide6.QtWidgets import QHBoxLayout
+
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(slider, stretch=1)
+        layout.addWidget(value_label)
+        return row
+
+    def _on_field_changed(self, *_args: object) -> None:
+        self._save_button.setEnabled(True)
+
+    def _on_save_clicked(self) -> None:
+        selected_durations = tuple(
+            sorted(d for d, cb in self._duration_checkboxes.items() if cb.isChecked())
+        )
+        updated = self._settings.with_field(
+            "shorts", allowed_durations_sec=selected_durations or self._settings.shorts.allowed_durations_sec
+        )
+        updated = updated.with_field("viral_score", queue_threshold=self._threshold_slider.value())
+        updated = updated.with_field("subtitles", style_preset=self._subtitle_style_combo.currentText())
+        updated = updated.with_field(
+            "branding",
+            banner_position=self._banner_position_combo.currentText(),
+            logo_position=self._logo_position_combo.currentText(),
+        )
+        updated = updated.with_field(
+            "reframe",
+            ai_zoom_enabled=self._ai_zoom_checkbox.isChecked(),
+            max_zoom_factor=self._zoom_factor_slider.value() / 10,
+        )
+        updated = updated.with_field("export", quality_preset=self._quality_combo.currentText())
+
+        self._settings = updated
+        self._save_button.setEnabled(False)
+        self.settings_saved.emit(updated)

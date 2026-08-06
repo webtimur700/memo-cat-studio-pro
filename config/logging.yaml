@@ -1,0 +1,36 @@
+# Конфигурация loguru (инициализируется в core/container.py при старте приложения).
+# Формат структурированный (JSON) в файле, человекочитаемый в консоли.
+
+sinks:
+  console:
+    enabled: true
+    level: INFO
+    format: "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+    colorize: true
+
+  file_app:
+    enabled: true
+    level: DEBUG
+    path: "logs/app.log"
+    rotation: "50 MB"
+    retention: "14 days"
+    compression: "zip"
+    serialize: true   # JSON-строки — удобно парсить для будущей диагностики/аналитики
+
+  file_errors:
+    enabled: true
+    level: ERROR
+    path: "logs/errors.log"
+    rotation: "20 MB"
+    retention: "60 days"
+    compression: "zip"
+    serialize: true
+    backtrace: true
+    diagnose: true    # полный traceback с локальными переменными — только для errors.log,
+                       # не для app.log, чтобы не раздувать обычный лог
+
+pipeline_stage_logging:
+  # Каждая стадия pipeline_runner.py логирует старт/конец/длительность —
+  # это основа для профилирования, какая стадия реально узкое место на этом железе.
+  log_stage_timing: true
+  log_stage_input_output_sizes: true

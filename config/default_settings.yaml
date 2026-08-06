@@ -1,0 +1,96 @@
+# Настройки по умолчанию. Загружаются в UserSettings (core/entities/settings.py)
+# и перезаписываются пользовательскими значениями из database/repositories/settings_repository.py.
+
+shorts:
+  # Функция: SHORTS должны создаваться указанных длительностей.
+  # Пайплайн генерирует по одному варианту клипа на каждую длительность,
+  # если под неё нашёлся достаточно "интересный" сегмент.
+  allowed_durations_sec: [15, 20, 30, 35, 45, 60]
+  min_duration_sec: 15
+  max_duration_sec: 60
+  boundary_padding_ms: 250   # запас на "интеллектуальный" старт/конец, чтобы не резать на полуслове
+
+viral_score:
+  # Формула считается в scoring/strategies/default_strategy.py.
+  # Порог ниже которого момент НЕ попадает в очередь нарезки (Функция: "если выше порога").
+  queue_threshold: 55
+  weights:
+    motion_intensity: 0.30
+    scene_change: 0.15
+    audio_event: 0.25       # лай/мяу/смех, обнаруженные event_classifier
+    face_prominence: 0.15   # крупность морды животного в кадре (MediaPipe)
+    speech_presence: 0.15
+
+reframe:
+  target_resolution: [1080, 1920]
+  tracking_smoothing_alpha: 0.15   # экспоненциальное сглаживание траектории камеры
+  ai_zoom:
+    enabled: true
+    min_subject_area_ratio: 0.08   # если животное занимает меньше 8% кадра — включаем зум
+    max_zoom_factor: 2.2
+
+subtitles:
+  engine: faster_whisper
+  model_size: small          # small хватает для CPU 8845HS с приемлемой скоростью; см. Шаг 6
+  compute_type: int8         # квантизация для CPU-инференса
+  style_preset: modern_bold
+  burn_in: true
+  word_highlight: true
+  export_formats: [srt, ass]
+
+titles:
+  variants_count: 10
+  style_reference: ["mrbeast", "daily_dose_of_internet", "failarmy", "funny_animals"]
+
+description:
+  seo_enabled: true
+  max_length_chars: 500
+
+hashtags:
+  max_count: 30
+
+cover:
+  emoji_enabled: true
+  glow_enabled: true
+  text_max_chars: 40
+
+branding:
+  banner:
+    text_lines:
+      - "💼 100zarplat.ru"
+      - "Подбор вакансий от проверенных работодателей"
+      - "💰 Ежедневные и еженедельные выплаты"
+    appear_at_sec: 4
+    duration_sec: 5
+    style: glassmorphism
+    animation_in: [slide_left, fade_in, scale, glow_pulse]
+    animation_out: [fade_out, slide_right]
+    floating_enabled: true
+    collision_avoidance: true   # автосмещение, если перекрывает морду животного
+  logo:
+    position: top_right
+    animated: true
+  subscribe_button:
+    enabled: true
+    animation: bounce
+
+audio:
+  music_library_path: "assets/music/"
+  duck_on_speech: true
+  duck_level_db: -12
+
+export:
+  codec_video: h264
+  codec_audio: aac
+  fps: 30
+  resolution: [1080, 1920]
+  quality_preset: high   # low | medium | high — детали в export/quality_presets.py
+  bitrate_mbps: 12
+
+batch:
+  max_concurrent_videos: 100
+  max_worker_processes: null   # null = автоматически: os.cpu_count() - 2 (резерв под UI)
+
+plugins:
+  enabled_dirs: ["plugins/"]
+  autoload: true
