@@ -18,7 +18,7 @@ class Palette:
     error: QColor = field(default_factory=lambda: QColor(255, 69, 0))
     
     border: QColor = field(default_factory=lambda: QColor(255, 255, 255, 30))
-    border_glass: QColor = field(default_factory=lambda: QColor(255, 255, 255, 40))  # Добавлено
+    border_glass: QColor = field(default_factory=lambda: QColor(255, 255, 255, 40))
     overlay: QColor = field(default_factory=lambda: QColor(0, 0, 0, 140))
 
 PALETTE = Palette()
