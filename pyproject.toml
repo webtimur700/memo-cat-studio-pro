@@ -27,6 +27,7 @@ dependencies = [
     #     см. честный комментарий в vision/compute_backend.py на Шаге 6) ---
     "onnxruntime>=1.18",
     "ultralytics>=8.3",              # используется для экспорта YOLO11 в ONNX, не для инференса
+    "onnxscript>=0.1",               # требуется для экспорта моделей в ONNX
     "mediapipe>=0.10",
 
     # --- Audio ---
