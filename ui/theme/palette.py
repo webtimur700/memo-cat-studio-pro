@@ -25,6 +25,9 @@ class Palette:
     
     shadow: QColor = field(default_factory=lambda: QColor(0, 0, 0, 100))
     overlay: QColor = field(default_factory=lambda: QColor(0, 0, 0, 140))
+
+# Глобальный экземпляр палитры
+PALETTE = Palette()
 def score_color(score: int) -> QColor:
     """Возвращает цвет badge'а в зависимости от Viral Score (0-100)."""
     if score < 40:
@@ -32,5 +35,3 @@ def score_color(score: int) -> QColor:
     if score < 70:
         return PALETTE.score_mid
     return PALETTE.score_high
-# Глобальный экземпляр палитры
-PALETTE = Palette()
