@@ -141,4 +141,8 @@ fi
 # ШАГ 8: запуск приложения
 # ------------------------------------------------------------
 log "Установка завершена. Запускаю Memo Cat AI Studio Pro..."
+export QT_QPA_PLATFORM=xcb
+export GST_PLUGIN_PATH=/usr/lib64/gstreamer-1.0:/usr/lib/gstreamer-1.0
+# Принудительно указываем бэкенд
+export QT_MULTIMEDIA_PREFERRED_BACKEND=ffmpeg
 python -m ui.main_window
