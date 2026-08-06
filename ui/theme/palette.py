@@ -18,6 +18,7 @@ class Palette:
     error: QColor = field(default_factory=lambda: QColor(255, 69, 0))
     
     border: QColor = field(default_factory=lambda: QColor(255, 255, 255, 30))
+    border_glass: QColor = field(default_factory=lambda: QColor(255, 255, 255, 40))  # Добавлено
     overlay: QColor = field(default_factory=lambda: QColor(0, 0, 0, 140))
 
 PALETTE = Palette()
@@ -30,4 +31,3 @@ def score_color(score: float) -> QColor:
     if score >= 0.5:
         return PALETTE.warning
     return PALETTE.error
-
