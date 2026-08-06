@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QPen, QWheelEvent
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsRectItem,
     QGraphicsScene,
@@ -74,7 +74,7 @@ class TimelineView(QWidget):
 
         self._scene = QGraphicsScene(self)
         self._view = QGraphicsView(self._scene, self)
-        self._view.setRenderHint(self._view.renderHints())
+        self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
         self._view.setBackgroundBrush(QBrush(PALETTE.surface))
         self._view.setFrameShape(QGraphicsView.Shape.NoFrame)
         self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
