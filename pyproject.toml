@@ -11,8 +11,6 @@ requires-python = ">=3.12,<3.13"
 license = { text = "Proprietary" }
 authors = [{ name = "Memo Cat AI Studio" }]
 
-# ВАЖНО: версии зафиксированы намеренно (не "*", не "latest"), чтобы сборка
-# на конкретной машине (Ryzen 7 8845HS / Radeon 780M / Bazzite) была воспроизводимой.
 dependencies = [
     # --- Core / DI / Data ---
     "dependency-injector==4.42.0",
@@ -82,3 +80,4 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
