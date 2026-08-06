@@ -19,8 +19,12 @@ dependencies = = [
     "onnx>=1.12.0",
     "onnxslim",
     "loguru",
-    "PySide6-Essentials>=6.6.0",
-    "numpy>=1.26.0",
+    "PySide6",
+    "pillow",
+    "numpy",
+    "opencv-python-headless",
+    "faster-whisper"
+]
     # --- UI ---
     "PySide6==6.7.2",
 
