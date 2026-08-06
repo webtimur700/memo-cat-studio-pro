@@ -31,4 +31,4 @@ def score_color(score: float) -> QColor:
     if score >= 0.5:
         return PALETTE.warning
     return PALETTE.error
-EOF
+
