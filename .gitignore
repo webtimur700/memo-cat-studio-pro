@@ -1,0 +1,4 @@
+```
+# Python distribution artifacts
+*.egg-info/
+```
