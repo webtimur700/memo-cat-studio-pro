@@ -20,7 +20,6 @@ class Palette:
     border: QColor = field(default_factory=lambda: QColor(255, 255, 255, 30))
     overlay: QColor = field(default_factory=lambda: QColor(0, 0, 0, 140))
 
-
 PALETTE = Palette()
 
 
