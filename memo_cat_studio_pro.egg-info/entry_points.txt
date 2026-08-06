@@ -1,0 +1,2 @@
+[console_scripts]
+memo-cat-studio = ui.main_window:main
