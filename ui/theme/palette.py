@@ -25,9 +25,16 @@ PALETTE = Palette()
 
 
 def score_color(score: float) -> QColor:
-    """Возвращает цвет в зависимости от уверенности (0.0 - 1.0)."""
-    if score >= 0.8:
+    """Возвращает цвет в зависимости от Viral Score.
+
+    Принимает шкалу 0-100 (int) — именно так score передаётся везде в
+    проекте: TimelineMoment.viral_score, ViralScoreBadge._displayed_score.
+    Раньше здесь были пороги 0.8/0.5 для шкалы 0.0-1.0, из-за чего любое
+    реальное значение (>=1) всегда попадало в первую ветку и возвращало
+    PALETTE.success — индикатор был всегда зелёным независимо от score.
+    """
+    if score >= 70:
         return PALETTE.success
-    if score >= 0.5:
+    if score >= 40:
         return PALETTE.warning
     return PALETTE.error
