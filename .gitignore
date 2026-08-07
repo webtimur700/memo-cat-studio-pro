@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Виртуальное окружение
+.venv/
+venv/
+
+# Секреты/локальные настройки
+.env
+
+# Логи
+logs/*.log
+
+# Скачанные ML-модели (тяжёлые, каждый ставит себе сам через download_models.py)
+models/
+
+# Редакторские lock-файлы (LibreOffice/OpenOffice) — уже случайно попадали в репозиторий
+.~lock.*#
+
+# IDE
+.vscode/
+.idea/
+
+# ОС
+.DS_Store
