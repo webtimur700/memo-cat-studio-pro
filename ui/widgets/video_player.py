@@ -1,7 +1,7 @@
 import cv2
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QSizePolicy
 from PySide6.QtGui import QImage, QPixmap, QColor
-from PySide6.QtCore import QTimer, Slot, Signal
+from PySide6.QtCore import QTimer, Slot, Signal, Qt
 import os
 
 class VideoPlayer(QWidget):
