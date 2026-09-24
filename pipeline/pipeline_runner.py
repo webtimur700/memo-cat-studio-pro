@@ -116,6 +116,7 @@ class PipelineRunner:
         self._models_dir = models_dir or Path("models")
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
+        self._transcriber = None  # создаётся на каждый process_video
 
     def process_video(
         self,
@@ -127,6 +128,7 @@ class PipelineRunner:
             if progress is not None:
                 progress(stage, data)
 
+        self._transcriber = None
         emit("analyzing")
         source = IngestionService().ingest(video_path)
         detector = _try_load_yolo(self._models_dir)
@@ -239,7 +241,8 @@ class PipelineRunner:
         settings: UserSettings,
     ) -> Clip | None:
         crop_samples = self._build_crop_samples(video_path, source, moment, detector, settings)
-        subtitle_ass_path = self._try_generate_subtitles(video_path, moment, settings)
+        words = self._transcribe_moment(video_path, moment, settings)
+        subtitle_ass_path = self._write_subtitles(video_path, moment, words, settings)
         banner_rect = self._build_banner_rect(source, settings)
 
         output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
@@ -333,41 +336,53 @@ class PipelineRunner:
 
         return samples
 
-    def _try_generate_subtitles(self, video_path: Path, moment: Moment, settings: UserSettings) -> Path | None:
-        audio_path = self._output_dir / f"_tmp_audio_{video_path.stem}_{int(moment.start_sec)}.wav"
-        ass_path = self._output_dir / f"_tmp_subs_{video_path.stem}_{int(moment.start_sec)}.ass"
-
-        try:
+    def _get_transcriber(self, settings: UserSettings):
+        """Один WhisperTranscriber на весь прогон видео: модель грузится в память
+        один раз (ленивo, при первой транскрипции), а не заново для каждого момента.
+        """
+        if self._transcriber is None:
             from subtitles.subtitle_service import WhisperTranscriber
 
-            FFmpegWrapper().extract_audio_track(video_path, audio_path)
-
-            transcriber = WhisperTranscriber(
+            self._transcriber = WhisperTranscriber(
                 model_size=settings.subtitles.model_size, compute_type=settings.subtitles.compute_type
             )
-            words = transcriber.transcribe(audio_path)
-            relevant = [w for w in words if moment.start_sec <= w.start_sec <= moment.end_sec]
-            if not relevant:
-                return None
+        return self._transcriber
 
-            shifted = [
-                WordTiming(w.text, w.start_sec - moment.start_sec, w.end_sec - moment.start_sec)
-                for w in relevant
-            ]
-            segments = group_words_into_segments(shifted)
+    def _transcribe_moment(self, video_path: Path, moment: Moment, settings: UserSettings) -> list[WordTiming]:
+        """Слова момента с таймингами ОТНОСИТЕЛЬНО начала момента. Транскрибируется
+        только звук самого момента (15-60 с), а не всего видео. При любой
+        проблеме возвращает [] и пишет warning — пайплайн идёт дальше без субтитров.
+        """
+        audio_path = self._output_dir / f"_tmp_audio_{video_path.stem}_{int(moment.start_sec)}.wav"
+        try:
+            FFmpegWrapper().extract_audio_track(
+                video_path, audio_path, start_sec=moment.start_sec, duration_sec=moment.duration_sec
+            )
+            return self._get_transcriber(settings).transcribe(audio_path)
+        except Exception as exc:
+            logger.warning(
+                "Транскрипция недоступна для момента {:.1f}s видео {}: {} — без субтитров и без текста для LLM",
+                moment.start_sec, video_path.name, exc,
+            )
+            return []
+        finally:
+            audio_path.unlink(missing_ok=True)
+
+    def _write_subtitles(
+        self, video_path: Path, moment: Moment, words: list[WordTiming], settings: UserSettings
+    ) -> Path | None:
+        if not words or not settings.subtitles.burn_in:
+            return None
+        ass_path = self._output_dir / f"_tmp_subs_{video_path.stem}_{int(moment.start_sec)}.ass"
+        try:
+            segments = group_words_into_segments(words)
             ass_content = render_ass(segments, style_preset=settings.subtitles.style_preset)
-
             ass_path.parent.mkdir(parents=True, exist_ok=True)
             ass_path.write_text(ass_content, encoding="utf-8")
             return ass_path
         except Exception as exc:
-            logger.warning(
-                "Субтитры недоступны для момента {:.1f}s видео {}: {} — экспортирую без субтитров",
-                moment.start_sec, video_path.name, exc,
-            )
+            logger.warning("Не удалось собрать субтитры для момента {:.1f}s: {}", moment.start_sec, exc)
             return None
-        finally:
-            audio_path.unlink(missing_ok=True)
 
     def _build_banner_rect(self, source, settings: UserSettings) -> tuple[int, int, int, int]:
         width, height = settings.export.width, settings.export.height

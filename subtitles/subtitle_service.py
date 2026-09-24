@@ -87,10 +87,26 @@ class WhisperTranscriber:
                 self._device,
                 self._compute_type,
             )
-            self._model = WhisperModel(
-                self._model_size, device=self._device, compute_type=self._compute_type
-            )
+            self._model = self._load_model(WhisperModel)
         return self._model
+
+    def _load_model(self, model_cls):
+        """Сначала только локальный кэш (~/.cache/huggingface): без обращения к
+        сети, поэтому не зависит от прокси в окружении (ALL_PROXY=socks:// ломает
+        httpx с "Unknown scheme for proxy URL"). Сеть — только если модели в
+        кэше нет.
+        """
+        try:
+            return model_cls(
+                self._model_size, device=self._device, compute_type=self._compute_type,
+                local_files_only=True,
+            )
+        except Exception as cache_exc:
+            logger.info(
+                "Модель {} не найдена в локальном кэше ({}) — пробую скачать",
+                self._model_size, type(cache_exc).__name__,
+            )
+        return model_cls(self._model_size, device=self._device, compute_type=self._compute_type)
 
     def transcribe(self, audio_path: Path, language: str | None = "ru") -> list[WordTiming]:
         if not audio_path.exists():
@@ -100,7 +116,8 @@ class WhisperTranscriber:
 
         try:
             segments, info = model.transcribe(
-                str(audio_path), word_timestamps=True, language=language
+                str(audio_path), word_timestamps=True, language=language,
+                vad_filter=True,  # пропускает музыку/тишину: быстрее и без галлюцинаций
             )
         except Exception as exc:  # faster-whisper/ctranslate2 могут бросать разные исключения
             raise TranscriptionError(f"Ошибка транскрипции {audio_path}: {exc}") from exc

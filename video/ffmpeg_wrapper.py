@@ -183,10 +183,24 @@ class FFmpegWrapper:
         _run(command)
         return destination
 
-    def extract_audio_track(self, source: Path, destination: Path) -> Path:
+    def extract_audio_track(
+        self,
+        source: Path,
+        destination: Path,
+        start_sec: float | None = None,
+        duration_sec: float | None = None,
+    ) -> Path:
+        """Извлекает моно-WAV 16 кГц. Если заданы start_sec/duration_sec —
+        только этот отрезок (-ss/-t ДО -i: быстрый seek без декодирования всего
+        файла); тайминги в результате отсчитываются от 0 начала отрезка.
+        """
         destination.parent.mkdir(parents=True, exist_ok=True)
-        command = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+        if start_sec is not None:
+            command += ["-ss", f"{start_sec:.3f}"]
+        if duration_sec is not None:
+            command += ["-t", f"{duration_sec:.3f}"]
+        command += [
             "-i", str(source),
             "-vn",
             "-acodec", "pcm_s16le",
