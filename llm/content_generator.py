@@ -30,6 +30,7 @@ class ClipContent:
     description: str = ""
     hashtags: tuple[str, ...] = ()
     errors: tuple[str, ...] = field(default_factory=tuple)
+    used_image: bool = False          # в запросах реально участвовал кадр
 
     @property
     def is_empty(self) -> bool:
@@ -43,22 +44,36 @@ def build_clip_description(transcript: str) -> str:
     return f"Забавный момент с животными. Что говорят в ролике: «{text}»"
 
 
-def generate_clip_content(provider: LLMProvider, transcript: str) -> ClipContent:
+def generate_clip_content(
+    provider: LLMProvider, transcript: str, image_jpeg: bytes | None = None
+) -> ClipContent:
+    """image_jpeg — кадр момента для vision-моделей. Если модель кадр не приняла
+    (не vision / ошибка запроса), шаг повторяется в текстовом режиме, а последующие
+    шаги уже идут без кадра."""
     description_for_llm = build_clip_description(transcript)
-    titles: tuple[str, ...] = ()
-    description = ""
-    hashtags: tuple[str, ...] = ()
     errors: list[str] = []
+    results: dict[str, object] = {}
+    image = image_jpeg
+    image_worked = False
 
     steps = (
-        ("заголовки", lambda: generate_titles(provider, description_for_llm, count=TITLE_COUNT)),
-        ("описание", lambda: generate_description(provider, description_for_llm)),
-        ("хештеги", lambda: generate_hashtags(provider, description_for_llm, max_count=MAX_HASHTAGS)),
+        ("заголовки", lambda img: generate_titles(provider, description_for_llm, count=TITLE_COUNT, image_jpeg=img)),
+        ("описание", lambda img: generate_description(provider, description_for_llm, image_jpeg=img)),
+        ("хештеги", lambda img: generate_hashtags(provider, description_for_llm, max_count=MAX_HASHTAGS, image_jpeg=img)),
     )
-    results: dict[str, object] = {}
     for name, step in steps:
         try:
-            results[name] = step()
+            try:
+                results[name] = step(image)
+                image_worked = image_worked or image is not None
+            except LLMUnavailableError:
+                raise
+            except LLMRequestError as exc:
+                if image is None:
+                    raise
+                logger.warning("LLM: кадр не принят ({}) — повторяю {} в текстовом режиме", exc, name)
+                image = None
+                results[name] = step(None)
         except LLMUnavailableError as exc:
             errors.append(f"{name}: {exc}")
             logger.warning("LLM недоступна: {} — заголовок по умолчанию", exc)
@@ -70,7 +85,10 @@ def generate_clip_content(provider: LLMProvider, transcript: str) -> ClipContent
             errors.append(f"{name}: {exc}")
             logger.warning("LLM: {} не сгенерированы: {}", name, exc)
 
-    titles = tuple(results.get("заголовки", ()))  # type: ignore[arg-type]
-    description = str(results.get("описание", ""))
-    hashtags = tuple(results.get("хештеги", ()))  # type: ignore[arg-type]
-    return ClipContent(titles=titles, description=description, hashtags=hashtags, errors=tuple(errors))
+    return ClipContent(
+        titles=tuple(results.get("заголовки", ())),  # type: ignore[arg-type]
+        description=str(results.get("описание", "")),
+        hashtags=tuple(results.get("хештеги", ())),  # type: ignore[arg-type]
+        errors=tuple(errors),
+        used_image=image_worked,
+    )

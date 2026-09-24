@@ -23,6 +23,33 @@ from core.exceptions import MemoCatError
 DEFAULT_MAX_WORDS_PER_SEGMENT = 4
 DEFAULT_MAX_SEGMENT_DURATION_SEC = 2.5
 
+# Whisper на музыке/шуме/смехе выдаёт заученные фразы из обучающих субтитров. Отсекаем их
+# и сегменты, в которых модель сама не уверена (по её же оценкам).
+MIN_SEGMENT_AVG_LOGPROB = -1.5
+NO_SPEECH_PROB_LIMIT = 0.6
+NO_SPEECH_LOGPROB_LIMIT = -1.0
+HALLUCINATION_MARKERS = (
+    "субтитры сделал", "субтитры создавал", "субтитры подготовил", "редактор субтитров",
+    "корректор", "продолжение следует", "спасибо за просмотр", "подписывайтесь на канал",
+    "thanks for watching", "thank you for watching", "subtitles by", "amara.org",
+    "字幕", "请不吝点赞", "订阅", "轉載", "点赞",
+)
+
+
+def is_hallucination(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in HALLUCINATION_MARKERS)
+
+
+def should_drop_segment(text: str, avg_logprob: float, no_speech_prob: float) -> bool:
+    """Сегмент — вероятная галлюцинация/мусор: известная "заученная" фраза, очень низкая
+    уверенность модели, либо "нет речи" при невысокой уверенности."""
+    if is_hallucination(text):
+        return True
+    if avg_logprob < MIN_SEGMENT_AVG_LOGPROB:
+        return True
+    return no_speech_prob > NO_SPEECH_PROB_LIMIT and avg_logprob < NO_SPEECH_LOGPROB_LIMIT
+
 
 class TranscriptionError(MemoCatError):
     pass
@@ -76,6 +103,8 @@ class WhisperTranscriber:
         self._compute_type = compute_type
         self._device = device
         self._model = None  # ленивая инициализация — модель грузится в память только при первом вызове
+        self.last_language: str | None = None   # язык, определённый в последней транскрипции
+        self.last_language_probability: float = 0.0
 
     def _ensure_model_loaded(self):
         if self._model is None:
@@ -108,7 +137,12 @@ class WhisperTranscriber:
             )
         return model_cls(self._model_size, device=self._device, compute_type=self._compute_type)
 
-    def transcribe(self, audio_path: Path, language: str | None = "ru") -> list[WordTiming]:
+    def transcribe(self, audio_path: Path, language: str | None = None) -> list[WordTiming]:
+        """language=None (или "auto") — определить язык по звуку. Принудительный язык
+        на речи другого языка даёт фонетический мусор (китайская речь с language="ru"
+        превращается в "Жанин, уй-ой-ой": уверенность модели падает, время растёт)."""
+        if language == "auto":
+            language = None
         if not audio_path.exists():
             raise TranscriptionError(f"Аудиофайл не найден: {audio_path}")
 
@@ -119,25 +153,46 @@ class WhisperTranscriber:
                 str(audio_path), word_timestamps=True, language=language,
                 vad_filter=True,  # пропускает музыку/тишину: быстрее и без галлюцинаций
             )
+        except ValueError as exc:
+            # faster-whisper 1.0.x: если после VAD не осталось речи, автоопределение языка падает
+            # на max() пустого списка вероятностей — это "речи нет", а не ошибка
+            if "max()" in str(exc) and "empty" in str(exc):
+                self.last_language = None
+                self.last_language_probability = 0.0
+                logger.debug("Речи в {} нет (VAD оставил пустое аудио)", audio_path.name)
+                return []
+            raise TranscriptionError(f"Ошибка транскрипции {audio_path}: {exc}") from exc
         except Exception as exc:  # faster-whisper/ctranslate2 могут бросать разные исключения
             raise TranscriptionError(f"Ошибка транскрипции {audio_path}: {exc}") from exc
 
+        self.last_language = getattr(info, "language", None)
+        self.last_language_probability = float(getattr(info, "language_probability", 0.0) or 0.0)
+
         words: list[WordTiming] = []
+        dropped = 0
         for segment in segments:
             if segment.words is None:
+                continue
+            if should_drop_segment(
+                segment.text, getattr(segment, "avg_logprob", 0.0), getattr(segment, "no_speech_prob", 0.0)
+            ):
+                dropped += 1
                 continue
             for word in segment.words:
                 words.append(
                     WordTiming(text=word.word.strip(), start_sec=word.start, end_sec=word.end)
                 )
 
-        logger.info("Транскрипция завершена: {} слов, язык={}", len(words), getattr(info, "language", "?"))
+        logger.info(
+            "Транскрипция завершена: {} слов, язык={} ({:.0%}), отброшено сегментов-галлюцинаций: {}",
+            len(words), self.last_language or "?", self.last_language_probability, dropped,
+        )
         return words
 
     def transcribe_to_segments(
         self,
         audio_path: Path,
-        language: str | None = "ru",
+        language: str | None = None,
         max_words_per_segment: int = DEFAULT_MAX_WORDS_PER_SEGMENT,
         max_segment_duration_sec: float = DEFAULT_MAX_SEGMENT_DURATION_SEC,
     ) -> list[SubtitleSegment]:

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -64,6 +65,9 @@ class LMStudioConfig:
     # "none" отключает рассуждения (reasoning_effort в /v1/chat/completions), "low"/"medium"
     # ограничивает; None — не передавать параметр (поведение модели по умолчанию).
     reasoning_effort: str | None = None
+    context_length: int = 8192        # контекст при загрузке модели самим приложением (по умолчанию LM Studio берёт 262144)
+    use_vision: bool = True           # отправлять кадр обложки, если модель умеет vision
+    manage_models: bool = True        # приложение само выбирает и загружает модель (llm/managed_provider.py)
 
     @classmethod
     def from_env(cls, env_path: Path | None = None) -> "LMStudioConfig":
@@ -79,6 +83,9 @@ class LMStudioConfig:
             timeout_sec=float(os.environ.get("LM_STUDIO_REQUEST_TIMEOUT_SEC", "") or defaults.timeout_sec),
             model_override=os.environ.get("LM_STUDIO_MODEL_OVERRIDE", "").strip() or None,
             reasoning_effort=os.environ.get("LM_STUDIO_REASONING_EFFORT", "").strip() or None,
+            context_length=int(os.environ.get("LM_STUDIO_CONTEXT_LENGTH", "") or defaults.context_length),
+            use_vision=os.environ.get("LM_STUDIO_USE_VISION", "1").strip().lower() not in ("0", "false", "no"),
+            manage_models=os.environ.get("LM_STUDIO_MANAGE_MODELS", "1").strip().lower() not in ("0", "false", "no"),
         )
 
 
@@ -86,6 +93,7 @@ class LMStudioProvider(LLMProvider):
     def __init__(self, config: LMStudioConfig | None = None) -> None:
         self._config = config or LMStudioConfig()
         self.last_usage: dict = {}   # usage последнего ответа (токены), для замеров
+        self.supports_vision: bool = False   # выставляет фабрика по метаданным выбранной модели
         self.last_model: str = ""
 
     def list_models(self) -> list[str]:
@@ -117,15 +125,24 @@ class LMStudioProvider(LLMProvider):
         # пользователя в LM Studio ("Currently Loaded").
         return available[0]
 
-    def complete(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+    def complete(
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None
+    ) -> str:
+        """images — JPEG-кадры (vision-модели): уходят data-URL'ами вместе с текстом."""
         model = self._resolve_model()
         url = f"{self._config.base_url}/chat/completions"
 
+        user_content: object = user_prompt
+        if images:
+            user_content = [{"type": "text", "text": user_prompt}] + [
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(img).decode()}}
+                for img in images
+            ]
         payload_body: dict = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": user_content},
             ],
             "max_tokens": max_tokens,
             "temperature": 0.8,

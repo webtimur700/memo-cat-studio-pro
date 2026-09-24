@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from core.interfaces.llm_provider import LLMProvider
+from llm.prompts.common import complete_with_optional_image, grounding_note
 
 SYSTEM_PROMPT = (
     "Ты — SEO-специалист по YouTube Shorts про животных. Генерируешь "
@@ -14,9 +15,12 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_hashtags_prompt(clip_description: str, max_count: int = 30) -> str:
+def build_hashtags_prompt(
+    clip_description: str, max_count: int = 30, has_image: bool = False, grounding: bool = True
+) -> str:
     return (
         f"Вот что происходит в ролике: {clip_description}\n\n"
+        f"{grounding_note(has_image, grounding)}"
         f"Дай до {max_count} хештегов для этого Shorts."
     )
 
@@ -36,8 +40,13 @@ def parse_hashtags(raw_response: str, max_count: int = 30) -> list[str]:
 
 
 def generate_hashtags(
-    provider: LLMProvider, clip_description: str, max_count: int = 30, max_tokens: int = 3072
+    provider: LLMProvider,
+    clip_description: str,
+    max_count: int = 30,
+    max_tokens: int = 3072,
+    image_jpeg: bytes | None = None,
+    grounding: bool = True,
 ) -> list[str]:
-    prompt = build_hashtags_prompt(clip_description, max_count)
-    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=max_tokens)
+    prompt = build_hashtags_prompt(clip_description, max_count, has_image=image_jpeg is not None, grounding=grounding)
+    raw_response = complete_with_optional_image(provider, SYSTEM_PROMPT, prompt, max_tokens, image_jpeg)
     return parse_hashtags(raw_response, max_count=max_count)

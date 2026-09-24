@@ -63,7 +63,7 @@ def test_pipeline_shares_one_transcriber_across_moments(sample_video, tmp_path, 
             created.append(self)
             self.durations: list[float] = []
 
-        def transcribe(self, audio_path: Path):
+        def transcribe(self, audio_path: Path, language=None):
             with wave.open(str(audio_path)) as wav:
                 self.durations.append(wav.getnframes() / wav.getframerate())
             return [WordTiming("привет", 0.1, 0.5)]

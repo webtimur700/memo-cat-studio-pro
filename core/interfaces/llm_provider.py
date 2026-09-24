@@ -10,8 +10,10 @@ from typing import Protocol
 
 
 class LLMProvider(Protocol):
-    def complete(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
-        """Возвращает текстовый ответ модели на промпт."""
+    def complete(
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None
+    ) -> str:
+        """Возвращает текстовый ответ модели на промпт (images — JPEG-кадры для vision-моделей)."""
         ...
 
     def list_models(self) -> list[str]:

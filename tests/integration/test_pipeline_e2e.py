@@ -29,7 +29,7 @@ class _StubTranscriber:
     def __init__(self, **_kwargs):
         pass
 
-    def transcribe(self, audio_path: Path):
+    def transcribe(self, audio_path: Path, language=None):
         return [WordTiming("привет", 0.2, 0.7), WordTiming("мир", 0.8, 1.3)]
 
 

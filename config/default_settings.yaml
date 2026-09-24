@@ -40,6 +40,8 @@ subtitles:
   style_preset: modern_bold
   burn_in: true
   word_highlight: true
+  language: auto             # язык речи определяется по звуку (не задавайте ru для чужой речи — будет мусор)
+  translate_to: ru           # субтитры переводятся через LLM на этот язык (пусто — оставить язык оригинала)
   export_formats: [srt, ass]
 
 titles:

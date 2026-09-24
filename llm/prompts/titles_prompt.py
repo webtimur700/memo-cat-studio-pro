@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 
 from core.interfaces.llm_provider import LLMProvider
+from llm.prompts.common import complete_with_optional_image, grounding_note
 
 SYSTEM_PROMPT = (
     "Ты — опытный контент-мейкер, который придумывает вирусные заголовки для "
@@ -18,9 +19,10 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_titles_prompt(clip_description: str) -> str:
+def build_titles_prompt(clip_description: str, has_image: bool = False, grounding: bool = True) -> str:
     return (
         f"Вот что происходит в ролике: {clip_description}\n\n"
+        f"{grounding_note(has_image, grounding)}"
         f"Придумай 10 разных вариантов заголовка для этого Shorts."
     )
 
@@ -51,8 +53,13 @@ def parse_titles(raw_response: str, expected_count: int = 10) -> list[str]:
 
 
 def generate_titles(
-    provider: LLMProvider, clip_description: str, count: int = 10, max_tokens: int = 4096
+    provider: LLMProvider,
+    clip_description: str,
+    count: int = 10,
+    max_tokens: int = 4096,
+    image_jpeg: bytes | None = None,
+    grounding: bool = True,
 ) -> list[str]:
-    prompt = build_titles_prompt(clip_description)
-    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=max_tokens)
+    prompt = build_titles_prompt(clip_description, has_image=image_jpeg is not None, grounding=grounding)
+    raw_response = complete_with_optional_image(provider, SYSTEM_PROMPT, prompt, max_tokens, image_jpeg)
     return parse_titles(raw_response, expected_count=count)

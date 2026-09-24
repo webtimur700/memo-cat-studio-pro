@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
 )
 
 from core.entities.settings import UserSettings
+from llm.lm_studio_provider import LMStudioConfig
+from llm.managed_provider import ManagedLMStudio
 from ui.pipeline_worker import PipelineWorker
 from ui.views.batch_queue_view import BatchQueueView, JobStage
 from ui.views.project_view import ProjectView
@@ -49,6 +51,8 @@ class MainWindow(QMainWindow):
         self._settings = UserSettings.load_from_yaml(settings_path)
         self._workers: dict[str, PipelineWorker] = {}
         self._job_videos: dict[str, str] = {}   # job_id -> имя исходного видео
+        # одна LLM на все задачи: модель выбирается по рейтингу/памяти и загружается один раз (.env: LM_STUDIO_*)
+        self._llm = ManagedLMStudio(LMStudioConfig.from_env(PROJECT_ROOT / ".env"))
 
         central = QWidget()
         central.setObjectName("centralWidget")
@@ -103,6 +107,7 @@ class MainWindow(QMainWindow):
 
     def _wire_pipeline_signals(self) -> None:
         def on_videos_added(paths: list[Path]) -> None:
+            self._llm.start_loading_in_background()   # пока идёт анализ, модель грузится в фоне
             for path in paths:
                 job_id = f"job_{abs(hash(str(path)))}_{len(self._workers)}"
                 self.batch_view.add_job(job_id, path.name)
@@ -115,6 +120,7 @@ class MainWindow(QMainWindow):
                     settings=self._settings,
                     models_dir=MODELS_DIR,
                     output_dir=EXPORT_OUTPUT_DIR,
+                    llm_provider=self._llm,
                     parent=self,
                 )
                 worker.stage_changed.connect(self._on_pipeline_stage_changed)
@@ -158,6 +164,7 @@ class MainWindow(QMainWindow):
         self.batch_view.update_progress(job_id, JobStage.DONE, moments_found=len(clips))
         logger.info("Готово: {} клип(ов) для job {}", len(clips), job_id)
         self._workers.pop(job_id, None)
+        self._release_llm_if_idle()
         source_name = self._job_videos.pop(job_id, "")
         if not clips:
             return
@@ -177,6 +184,14 @@ class MainWindow(QMainWindow):
     def _on_pipeline_failed(self, job_id: str, error_message: str) -> None:
         self.batch_view.mark_failed(job_id, error_message)
         self._workers.pop(job_id, None)
+        self._release_llm_if_idle()
+
+    def _release_llm_if_idle(self) -> None:
+        """Все задачи завершены — выгружаем LLM, чтобы вернуть память (в фоне: выгрузка не блокирует UI)."""
+        if not self._workers:
+            import threading
+
+            threading.Thread(target=self._llm.release, name="lm-studio-release", daemon=True).start()
 
     def load_demo_timeline(self) -> None:
         """Вспомогательный метод для ручной проверки timeline_view без

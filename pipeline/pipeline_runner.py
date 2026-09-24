@@ -78,6 +78,16 @@ def _frame_motion_score(prev_gray: np.ndarray, curr_gray: np.ndarray) -> float:
     return min(1.0, float(diff.mean()) / MOTION_NORMALIZATION)
 
 
+def frame_to_jpeg(frame: np.ndarray, max_side: int = 768, quality: int = 85) -> bytes | None:
+    """Кадр (BGR) -> JPEG для vision-модели: уменьшенный, чтобы не раздувать промпт."""
+    height, width = frame.shape[:2]
+    scale = max_side / max(height, width)
+    if scale < 1.0:
+        frame = cv2.resize(frame, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+    ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return encoded.tobytes() if ok else None
+
+
 def _motion_direction_x(detections: list[Detection]) -> float:
     """-1..1: горизонтальный сдвиг центра bbox между двумя последними детекциями
     трека относительно ширины bbox (голова животного смещена по ходу движения)."""
@@ -143,7 +153,8 @@ class PipelineRunner:
         self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
         # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
         # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
-        self._word_cache: list[tuple[float, float, list[WordTiming]]] = []
+        self._word_cache: list[tuple[float, float, list[WordTiming], str | None]] = []
+        self.last_moment_language: str | None = None   # язык речи в последнем транскрибированном моменте
 
     def process_video(
         self,
@@ -283,6 +294,8 @@ class PipelineRunner:
     ) -> Clip | None:
         crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
         words = self._transcribe_moment(video_path, moment, settings)
+        original_transcript = " ".join(w.text for w in words)
+        words = self._translate_subtitles(words, self.last_moment_language, settings)
         zone = SafeZone.from_settings((settings.export.width, settings.export.height), settings.safe_zone)
         subtitle_ass_path = self._write_subtitles(video_path, moment, words, settings, zone)
         branding = self._build_branding(settings, zone)
@@ -321,11 +334,13 @@ class PipelineRunner:
                 subtitle_ass_path.unlink(missing_ok=True)
 
         transcript = " ".join(w.text for w in words)
-        content = self._generate_content(transcript)
+        cover_frame = self._pick_cover_frame(video_path, moment)
+        content = self._generate_content(transcript, cover_frame)
         title = content.titles[0] if content.titles else self._default_title(moment)
-        cover_path = self._generate_cover(video_path, moment, crop_samples, title, output_path, settings)
+        cover_path = self._generate_cover(cover_frame, moment, crop_samples, title, output_path, settings)
         metadata_path = self._write_metadata(
-            output_path, video_path, moment, transcript, title, content, cover_path
+            output_path, video_path, moment, transcript, title, content, cover_path,
+            transcript_original=original_transcript, language=self.last_moment_language,
         )
 
         return Clip(
@@ -356,17 +371,33 @@ class PipelineRunner:
             return None
         return None if branding.is_empty else branding
 
-    def _generate_content(self, transcript: str) -> ClipContent:
-        """Заголовки/описание/хештеги от LLM по тексту транскрипции момента. Без
-        LLM-провайдера или если LM Studio недоступна — пустой результат (клип
-        получает заголовок по умолчанию), пайплайн не падает.
+    def _generate_content(self, transcript: str, cover_frame: tuple[float, np.ndarray] | None = None) -> ClipContent:
+        """Заголовки/описание/хештеги от LLM по тексту транскрипции момента (и по кадру обложки,
+        если модель умеет vision). Без LLM-провайдера или если LM Studio недоступна — пустой
+        результат (клип получает заголовок по умолчанию), пайплайн не падает.
         """
         if self._llm_provider is None or self._llm_unavailable:
             return ClipContent()
-        content = generate_clip_content(self._llm_provider, transcript)
+        image_jpeg = None
+        if cover_frame is not None and getattr(self._llm_provider, "supports_vision", False):
+            image_jpeg = frame_to_jpeg(cover_frame[1])
+        content = generate_clip_content(self._llm_provider, transcript, image_jpeg=image_jpeg)
         if content.is_empty and content.errors:
             self._llm_unavailable = True
         return content
+
+    def _pick_cover_frame(self, video_path: Path, moment: Moment) -> tuple[float, np.ndarray] | None:
+        """Самый резкий кадр момента (нужен и LLM как картинка, и обложке)."""
+        try:
+            with FrameExtractor(video_path) as extractor:
+                return extractor.best_frame_for_cover(moment.start_sec, moment.end_sec)
+        except Exception as exc:
+            logger.warning("Кадр обложки для момента {:.1f}s не получен: {}", moment.start_sec, exc)
+            return None
+
+    def _llm_model_name(self) -> str | None:
+        selection = getattr(self._llm_provider, "selection", None)
+        return selection.model_key if selection is not None else getattr(self._llm_provider, "last_model", None) or None
 
     @staticmethod
     def _default_title(moment: Moment) -> str:
@@ -374,22 +405,22 @@ class PipelineRunner:
 
     def _generate_cover(
         self,
-        video_path: Path,
+        cover_frame: tuple[float, np.ndarray] | None,
         moment: Moment,
         crop_samples: list[CropSample],
         title: str,
         output_path: Path,
         settings: UserSettings,
     ) -> Path | None:
-        """<имя_клипа>_cover.png: самый резкий кадр момента, обрезанный тем же
-        окном автокадрирования, что и в клипе (вертикаль 9:16), + заголовок.
+        """<имя_клипа>_cover.png: самый резкий кадр момента, обрезанный тем же окном
+        автокадрирования, что и в клипе (вертикаль 9:16), + заголовок.
         Любой сбой — warning и клип без обложки, пайплайн не падает.
         """
+        if cover_frame is None:
+            return None
         cover_path = output_path.with_name(f"{output_path.stem}_cover.png")
         try:
-            with FrameExtractor(video_path) as extractor:
-                timestamp, frame = extractor.best_frame_for_cover(moment.start_sec, moment.end_sec)
-
+            timestamp, frame = cover_frame
             relative_t = timestamp - moment.start_sec
             nearest = min(crop_samples, key=lambda cs: abs(cs.timestamp_sec - relative_t))
             height, width = frame.shape[:2]
@@ -418,6 +449,8 @@ class PipelineRunner:
         title: str,
         content: ClipContent,
         cover_path: Path | None = None,
+        transcript_original: str = "",
+        language: str | None = None,
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
         payload = {
@@ -432,7 +465,11 @@ class PipelineRunner:
             "description": content.description,
             "hashtags": list(content.hashtags),
             "transcript": transcript,
+            "transcript_original": transcript_original if transcript_original != transcript else "",
+            "speech_language": language,
             "llm_errors": list(content.errors),
+            "llm_model": self._llm_model_name(),
+            "vision_used": content.used_image,
         }
         try:
             metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -533,14 +570,17 @@ class PipelineRunner:
         только звук диапазона; результат кэшируется на время обработки видео. При
         любой проблеме возвращает [] и пишет warning — пайплайн идёт дальше.
         """
-        for cache_start, cache_end, cached in self._word_cache:
+        for cache_start, cache_end, cached, cached_language in self._word_cache:
             if cache_start <= start + 0.01 and cache_end >= end - 0.01:
+                self.last_moment_language = cached_language
                 return [w for w in cached if w.end_sec > start and w.start_sec < end]
 
         audio_path = self._output_dir / f"_tmp_audio_{video_path.stem}_{int(start * 1000)}.wav"
         try:
             FFmpegWrapper().extract_audio_track(video_path, audio_path, start_sec=start, duration_sec=end - start)
-            relative = self._get_transcriber(settings).transcribe(audio_path)
+            transcriber = self._get_transcriber(settings)
+            relative = transcriber.transcribe(audio_path, language=settings.subtitles.language)
+            language = getattr(transcriber, "last_language", None)
         except Exception as exc:
             logger.warning(
                 "Транскрипция недоступна для {:.1f}-{:.1f}s видео {}: {} — без субтитров и без текста для LLM",
@@ -551,7 +591,8 @@ class PipelineRunner:
             audio_path.unlink(missing_ok=True)
 
         absolute = [WordTiming(w.text, w.start_sec + start, w.end_sec + start) for w in relative]
-        self._word_cache.append((start, end, absolute))
+        self._word_cache.append((start, end, absolute, language))
+        self.last_moment_language = language
         return absolute
 
     def _transcribe_moment(self, video_path: Path, moment: Moment, settings: UserSettings) -> list[WordTiming]:
@@ -578,6 +619,24 @@ class PipelineRunner:
         pauses.append(max(start, words[0].start_sec - SPEECH_EDGE_MARGIN_SEC))
         pauses.append(min(end, words[-1].end_sec + SPEECH_EDGE_MARGIN_SEC))
         return pauses
+
+    def _translate_subtitles(
+        self, words: list[WordTiming], language: str | None, settings: UserSettings
+    ) -> list[WordTiming]:
+        """Перевод слов на settings.subtitles.translate_to через LLM, если язык речи другой.
+        Нет LLM / перевод не удался — остаётся язык оригинала (warning в логе)."""
+        target = settings.subtitles.translate_to
+        if not words or not target or not language or language == target:
+            return words
+        if self._llm_provider is None or self._llm_unavailable:
+            logger.warning(
+                "Речь на языке '{}', а LLM недоступна для перевода на '{}' — субтитры на языке оригинала", language, target
+            )
+            return words
+        from subtitles.translator import translate_words
+
+        translated = translate_words(self._llm_provider, words, target)
+        return translated if translated else words
 
     def _write_subtitles(
         self,

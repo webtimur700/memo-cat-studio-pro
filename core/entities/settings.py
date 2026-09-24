@@ -53,6 +53,8 @@ class SubtitleSettings:
     style_preset: str = "modern_bold"
     burn_in: bool = True
     word_highlight: bool = True
+    language: str = "auto"       # язык речи: "auto" — определять по звуку (принудительный язык на чужой речи даёт мусор)
+    translate_to: str = "ru"     # переводить субтитры через LLM на этот язык ("" — не переводить)
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +158,8 @@ class UserSettings:
                 style_preset=subs_raw.get("style_preset", "modern_bold"),
                 burn_in=subs_raw.get("burn_in", True),
                 word_highlight=subs_raw.get("word_highlight", True),
+                language=subs_raw.get("language", "auto"),
+                translate_to=subs_raw.get("translate_to", "ru"),
             ),
             branding=BrandingSettings(
                 banner_position=branding_raw.get("banner", {}).get("position", "bottom_center"),

@@ -17,10 +17,8 @@ from PySide6.QtCore import QThread, Signal
 
 from core.entities.clip import Clip
 from core.entities.settings import UserSettings
-from llm.lm_studio_provider import LMStudioConfig, LMStudioProvider
 from pipeline.pipeline_runner import PipelineRunner
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class PipelineWorker(QThread):
@@ -35,6 +33,7 @@ class PipelineWorker(QThread):
         settings: UserSettings,
         models_dir: Path,
         output_dir: Path,
+        llm_provider: object | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -43,17 +42,17 @@ class PipelineWorker(QThread):
         self._settings = settings
         self._models_dir = models_dir
         self._output_dir = output_dir
+        self._llm_provider = llm_provider
 
     def run(self) -> None:  # выполняется в отдельном потоке — тяжёлая работа здесь безопасна
         def on_progress(stage: str, data: dict) -> None:
             self.stage_changed.emit(self._job_id, stage, data)
 
         try:
-            # URL/таймаут/модель — из .env (LM_STUDIO_*). Если LM Studio не запущена,
-            # раннер ловит ошибку, пишет warning и использует заголовок по умолчанию.
-            llm_provider = LMStudioProvider(LMStudioConfig.from_env(PROJECT_ROOT / ".env"))
+            # LLM (ManagedLMStudio) — общая на все задачи: модель выбирается и загружается один раз.
+            # Если LM Studio не запущена, раннер ловит ошибку, пишет warning и берёт заголовок по умолчанию.
             runner = PipelineRunner(
-                models_dir=self._models_dir, output_dir=self._output_dir, llm_provider=llm_provider
+                models_dir=self._models_dir, output_dir=self._output_dir, llm_provider=self._llm_provider
             )
             clips: list[Clip] = runner.process_video(self._video_path, self._settings, progress=on_progress)
             self.job_finished.emit(self._job_id, clips)
