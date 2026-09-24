@@ -1,0 +1,30 @@
+[
+  {
+    "id": "m150",
+    "video": "myvideo.mp4",
+    "start_sec": 150.0,
+    "transcript": "convergeeding the editor we They're in Rouge coming Редактор субтитров Н .Закомолдина",
+    "image": "moment_150.jpg"
+  },
+  {
+    "id": "m210",
+    "video": "myvideo.mp4",
+    "start_sec": 210.0,
+    "transcript": "Жанин, уй -ой -ой -ой -ой -ой -ой! Я к тебе зафлию. А -а -а. А, гябра. Гябра!",
+    "image": "moment_210.jpg"
+  },
+  {
+    "id": "m990",
+    "video": "myvideo.mp4",
+    "start_sec": 990.0,
+    "transcript": "Вот они и не спныли Я по -моему все -таки не знаю Как это? Это не бежим А че? Только ты",
+    "image": "moment_990.jpg"
+  },
+  {
+    "id": "m60",
+    "video": "myvideo.mp4",
+    "start_sec": 60.0,
+    "transcript": "",
+    "image": "moment_60.jpg"
+  }
+]

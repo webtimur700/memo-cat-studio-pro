@@ -1,0 +1,666 @@
+{
+  "google/gemma-4-26b-a4b": {
+    "cases": {
+      "none|m150": {
+        "steps": {
+          "titles": {
+            "sec": 13.2,
+            "completion_tokens": 136,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 7.6,
+            "completion_tokens": 63,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 9.5,
+            "completion_tokens": 96,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 30.2,
+        "outputs": {
+          "titles": [
+            "ОНИ ЗАШЛИ СЛИШКОМ ДАЛЕКО! 😱",
+            "Эдит заслужил эту награду 😂",
+            "Тот самый момент, когда всё пошло не так...",
+            "Редактор, спасай! 🆘",
+            "Этого никто НЕ ОЖИДАЛ! 🔥",
+            "Животные захватили монтаж! 🐾",
+            "СМОТРЕТЬ ДО КОНЦА ‼️",
+            "Самый хаотичный ролик года 😂",
+            "Как они это сделали?! 🤔",
+            "Чистый хаос и милота ✨"
+          ],
+          "description": "Этот забавный ролик с животными точно поднимет вам настроение. Посмотрите на этот смешной момент и неожиданную реакцию питомцев, которые ведут себя как настоящие звезды. Подпишитесь, чтобы не пропустить новые милые видео с котами и собаками.",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#funnypets",
+            "#cuteanimals",
+            "#animalmemes",
+            "#pets",
+            "#petlovers",
+            "#funnyvideos",
+            "#comedy",
+            "#humor",
+            "#trending",
+            "#viral",
+            "#shorts",
+            "#shortsvideo",
+            "#cutepets",
+            "#animalsoftiktok",
+            "#dogsoftiktok",
+            "#catsoftiktok",
+            "#funnycats",
+            "#funnymoments",
+            "#laugh",
+            "#lol",
+            "#adorable",
+            "#wildlife",
+            "#petlife",
+            "#animalsdoingthings",
+            "#dailydoseofcute",
+            "#instaanimals",
+            "#funnyfails",
+            "#wholesome"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 43,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 241,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "none|m210": {
+        "steps": {
+          "titles": {
+            "sec": 10.7,
+            "completion_tokens": 142,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 5.2,
+            "completion_tokens": 53,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 7.2,
+            "completion_tokens": 87,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 23.1,
+        "outputs": {
+          "titles": [
+            "ОН ТАК И ХОЧЕТ ЗАФЛИРТОВАТЬ! 😂",
+            "Этот диалог — чистый хаос! 💀",
+            "Когда животные понимают человеческий язык...",
+            "Жанин, ты это слышала?! 😱",
+            "Самый странный подкат в мире! 🔥",
+            "Он просто не может остановиться! 😂",
+            "ГЯБРА! Что он вообще сказал? 🤔",
+            "Тот самый момент, когда всё пошло не так...",
+            "Это видео разберут на мемы! ✨",
+            "Уровень флирта: БОГ 🤣"
+          ],
+          "description": "Смешной и неожиданный момент с участием милых животных. Посмотрите на эту забавную реакцию, которая точно поднимет вам настроение. Видео с говорящими питомцами и курьезными ситуациями в мире природы.",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#funny",
+            "#pets",
+            "#cuteanimals",
+            "#animalmemes",
+            "#funnyvideos",
+            "#shortsvideo",
+            "#trending",
+            "#viral",
+            "#humor",
+            "#laughter",
+            "#petslife",
+            "#funnycats",
+            "#dogsoftiktok",
+            "#catsoftiktok",
+            "#zoo",
+            "#wildlife",
+            "#funnyfails",
+            "#comedy",
+            "#smile",
+            "#joy",
+            "#adorable",
+            "#love",
+            "#petlovers",
+            "#animalsdoingthings",
+            "#memes",
+            "#crazyanimals",
+            "#funnyreels",
+            "#funnymoments"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 44,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 199,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "none|m990": {
+        "steps": {
+          "titles": {
+            "sec": 9.9,
+            "completion_tokens": 130,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 5.4,
+            "completion_tokens": 57,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 8.0,
+            "completion_tokens": 101,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 23.3,
+        "outputs": {
+          "titles": [
+            "ОНИ СОБАЧИЛИ?! 😂",
+            "Что они творят?! 😱",
+            "Я НЕ ПОНИМАЮ, КАК ЭТО РАБОТАЕТ!",
+            "Это было слишком внезапно... 🐾",
+            "Они реально не спят? 🤔",
+            "Тот самый момент, когда всё пошло не так",
+            "СМОТРИ ДО КОНЦА! 🔥",
+            "У них нет тормозов! 😂",
+            "Ожидание vs Реальность с животными",
+            "Это просто ЛЕГЕНДАРНО 🐶✨"
+          ],
+          "description": "Смешные моменты с животными, которые точно поднимут вам настроение. Посмотрите на эту забавную ситуацию и забавную реакцию питомцев в этом коротком видео. Милые и смешные животные всегда дарят улыбку!",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#funny",
+            "#pets",
+            "#cuteanimals",
+            "#animalshorts",
+            "#comedy",
+            "#funnyvideo",
+            "#animalsdoingthings",
+            "#petlovers",
+            "#wildlife",
+            "#humor",
+            "#приколысживотными",
+            "#смешныеживотные",
+            "#милота",
+            "#юмор",
+            "#забавное",
+            "#реакция",
+            "#animalsmoments",
+            "#funnyfails",
+            "#cutepets",
+            "#petslife",
+            "#trending",
+            "#viral",
+            "#shorts",
+            "#shortsvideo",
+            "#animalmemes",
+            "#smash",
+            "#reels",
+            "#zoo"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 40,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 0.99,
+          "description_len": 200,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "none|m60": {
+        "steps": {
+          "titles": {
+            "sec": 9.6,
+            "completion_tokens": 129,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 5.7,
+            "completion_tokens": 66,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 7.4,
+            "completion_tokens": 95,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 22.7,
+        "outputs": {
+          "titles": [
+            "Это невозможно не улыбнуться! 😂",
+            "Досмотри до конца... 😱",
+            "ОНИ ТАКОГО НЕ ОЖИДАЛИ! 🐶",
+            "Чистый хаос и милота ✨",
+            "Уровень мимими: ЗАШКАЛИВАЕТ ❤️",
+            "Ошибка системы? 🤖😂",
+            "Мой день стал лучше после этого!",
+            "Просто посмотри на это... 🥺",
+            "Шок-контент для любителей животных! 🔥",
+            "Самый смешной момент за сегодня 😂🐾"
+          ],
+          "description": "Соберите коллекцию самых смешных моментов с милыми животными в этом видео. Вас ждут забавные ситуации и невероятно смешные реакции питомцев, которые поднимут настроение. Наслаждайтесь коротким роликом с добрым юмором и очаровательными зверями.",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#cuteanimals",
+            "#funnyvideo",
+            "#animalshorts",
+            "#pets",
+            "#funnycats",
+            "#dogsoftiktok",
+            "#cutepets",
+            "#animalsdoingthings",
+            "#petlovers",
+            "#comedy",
+            "#laugh",
+            "#memes",
+            "#instaanimals",
+            "#wildlife",
+            "#funnyvideos",
+            "#adorable",
+            "#wholesome",
+            "#trending",
+            "#viral",
+            "#shortsvideo",
+            "#animalslove",
+            "#funnymoments",
+            "#petlife",
+            "#animalmemes",
+            "#cute",
+            "#dailydoseofcute",
+            "#funnyreels",
+            "#nature"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 37,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 243,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "low|m150": {
+        "steps": {
+          "titles": {
+            "sec": 67.2,
+            "completion_tokens": 970,
+            "reasoning_tokens": 841,
+            "error": null
+          },
+          "description": {
+            "sec": 34.4,
+            "completion_tokens": 487,
+            "reasoning_tokens": 430,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 65.2,
+            "completion_tokens": 949,
+            "reasoning_tokens": 850,
+            "error": null
+          }
+        },
+        "total_sec": 166.8,
+        "outputs": {
+          "titles": [
+            "Он НЕ ОЖИДАЛ такого! 😱",
+            "Досмотри до конца... 😂",
+            "Полный хаос! 🐾",
+            "Вы только посмотрите на это 👀",
+            "Это было слишком неожиданно! 🔥",
+            "Самый смешной момент дня 🤣",
+            "Подожди, что?! 🤔",
+            "Животные — это просто нечто! ✨",
+            "Я НЕ МОГУ ПЕРЕСТАТЬ СМЕЯТЬСЯ 💀",
+            "Просто БЕЗ СЛОВ... 😶"
+          ],
+          "description": "Посмотрите на этот невероятно смешной момент с животными! Эти милые питомцы точно поднимут вам настроение и заставят улыбнуться. Самые забавные приколы с домашними любимцами в одном видео.",
+          "hashtags": [
+            "#animals",
+            "#funny",
+            "#shorts",
+            "#ytshorts",
+            "#cute",
+            "#pets",
+            "#animalsoftiktok",
+            "#funnyanimals",
+            "#comedy",
+            "#viral",
+            "#trending",
+            "#animalmemes",
+            "#cutepets",
+            "#petlover",
+            "#funnyvideo",
+            "#laugh",
+            "#humor",
+            "#animalsdoingthings",
+            "#funnyfails",
+            "#aww",
+            "#dailydoseofcute",
+            "#memes",
+            "#petslife",
+            "#animalsworld",
+            "#animaladdict",
+            "#instaanimals",
+            "#comedygold",
+            "#funnymoments",
+            "#crazypets",
+            "#shortsfeed"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 30,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 188,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "low|m210": {
+        "steps": {
+          "titles": {
+            "sec": 70.2,
+            "completion_tokens": 985,
+            "reasoning_tokens": 851,
+            "error": null
+          },
+          "description": {
+            "sec": 35.4,
+            "completion_tokens": 483,
+            "reasoning_tokens": 428,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 55.0,
+            "completion_tokens": 765,
+            "reasoning_tokens": 668,
+            "error": null
+          }
+        },
+        "total_sec": 160.5,
+        "outputs": {
+          "titles": [
+            "Что он только что сказал?! 😂",
+            "Самый странный подкат в мире... 💀",
+            "ГЯБРА?! Что тут происходит? 🤣",
+            "Этот зверь просто неуправляем! 😭",
+            "Я не могу перестать смеяться! 🤡",
+            "Он реально пытается с ней флиртовать? 😍",
+            "Просто послушайте эти звуки... 💀😂",
+            "Это какой-то другой язык?! 🤨",
+            "ПОЛНЫЙ ХАОС! 😂🤣",
+            "Я вообще не ожидал такого 😱"
+          ],
+          "description": "Этот забавный момент с животными точно поднимет вам настроение! Смешная озвучка и милые приколы с питомцами гарантируют отличный заряд позитива. Посмотрите на эти невероятные курьезы!",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#shorts",
+            "#memes",
+            "#funny",
+            "#cuteanimals",
+            "#comedy",
+            "#animalmemes",
+            "#funnyvideo",
+            "#trending",
+            "#viral",
+            "#humor",
+            "#pets",
+            "#cutenessoverload",
+            "#funnyaudio",
+            "#laugh",
+            "#hilarious",
+            "#petlovers",
+            "#funnymoments",
+            "#crazymoments",
+            "#ytshorts",
+            "#animalsdoingthings",
+            "#memesdaily",
+            "#comedygold",
+            "#cute",
+            "#animalshorts",
+            "#wildlife",
+            "#funnyreels",
+            "#petlife",
+            "#trendingaudio"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 39,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 183,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "low|m990": {
+        "steps": {
+          "titles": {
+            "sec": 61.3,
+            "completion_tokens": 857,
+            "reasoning_tokens": 739,
+            "error": null
+          },
+          "description": {
+            "sec": 38.4,
+            "completion_tokens": 530,
+            "reasoning_tokens": 490,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 53.4,
+            "completion_tokens": 754,
+            "reasoning_tokens": 657,
+            "error": null
+          }
+        },
+        "total_sec": 153.1,
+        "outputs": {
+          "titles": [
+            "Они ВООБЩЕ не спали?! 😱",
+            "Что они творят? 😂",
+            "Я просто в шоке от этого...",
+            "Как это вообще возможно? 🤔",
+            "СМОТРИ до конца! 🤯",
+            "Самый странный момент дня 🐾",
+            "Они решили устроить хаос!",
+            "Что я только что увидел?! 😳",
+            "У них совсем нет сна... 😂",
+            "Это просто НЕВЕРОЯТНО! ✨"
+          ],
+          "description": "Посмотрите на этот невероятно забавный момент с участием животных. Эти смешные питомцы устроили настоящий хаос, который невозможно смотреть без улыбки!",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#shorts",
+            "#pets",
+            "#cuteanimals",
+            "#funny",
+            "#animalmemes",
+            "#comedy",
+            "#humor",
+            "#cutenessoverload",
+            "#petfails",
+            "#funnyvideo",
+            "#lol",
+            "#animalsdoingthings",
+            "#youtubeshorts",
+            "#doglife",
+            "#catlife",
+            "#hilarious",
+            "#aww",
+            "#petlover",
+            "#animalshorts",
+            "#memes",
+            "#trending",
+            "#viral",
+            "#petslife",
+            "#funnycats",
+            "#funnypets",
+            "#dailydoseofcute",
+            "#crazyanimals",
+            "#unexpected"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 27,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 151,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "low|m60": {
+        "steps": {
+          "titles": {
+            "sec": 69.1,
+            "completion_tokens": 973,
+            "reasoning_tokens": 838,
+            "error": null
+          },
+          "description": {
+            "sec": 30.5,
+            "completion_tokens": 419,
+            "reasoning_tokens": 381,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 46.5,
+            "completion_tokens": 663,
+            "reasoning_tokens": 561,
+            "error": null
+          }
+        },
+        "total_sec": 146.2,
+        "outputs": {
+          "titles": [
+            "Вы НЕ ПОВЕРИТЕ, что произошло! 😱",
+            "Они просто ОБОЖАЮТ пранки 😂",
+            "Досмотри до конца... Это ШОК! 🤯",
+            "Худший день для этих животных 🤦‍♂️",
+            "Я не могу перестать смеяться! 🤣",
+            "Это слишком мило, чтобы быть правдой ❤️",
+            "Что он творит?! 🤔",
+            "Эпичный фейл года 🔥",
+            "Просто типичный день с питомцами...",
+            "Подожди этот момент! 🐾"
+          ],
+          "description": "Смешные животные и их самые забавные моменты. Посмотрите на этих милых питомцев, которые точно поднимут вам настроение!",
+          "hashtags": [
+            "#animals",
+            "#funny",
+            "#shorts",
+            "#cute",
+            "#pets",
+            "#animalsoftiktok",
+            "#trending",
+            "#viral",
+            "#funnymoments",
+            "#wholesome",
+            "#funnyanimals",
+            "#animalmemes",
+            "#petlovers",
+            "#cutepets",
+            "#funnyvideo",
+            "#dailydoseofcute",
+            "#comedy",
+            "#laugh",
+            "#aww",
+            "#petslife",
+            "#animaladdict",
+            "#funnyfails",
+            "#memes",
+            "#loveyourpets",
+            "#cuteanimals",
+            "#petstagram",
+            "#shortsvideo",
+            "#humor",
+            "#funnyvideooftheday",
+            "#animalworld"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 39,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 119,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      }
+    },
+    "load": {
+      "load_sec": 16.8,
+      "context_length": 16384,
+      "available_drop_mib": 10399,
+      "gtt_delta_mib": 8230,
+      "size_gib": 16.8
+    },
+    "run_memory": {
+      "peak_available_drop_mib": 13669,
+      "peak_gtt_mib": 9459,
+      "peak_vram_mib": 486
+    }
+  }
+}

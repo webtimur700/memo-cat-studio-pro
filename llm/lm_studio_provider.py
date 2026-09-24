@@ -61,6 +61,9 @@ class LMStudioConfig:
     base_url: str = "http://localhost:1234/v1"
     timeout_sec: float = 120.0
     model_override: str | None = None
+    # "none" отключает рассуждения (reasoning_effort в /v1/chat/completions), "low"/"medium"
+    # ограничивает; None — не передавать параметр (поведение модели по умолчанию).
+    reasoning_effort: str | None = None
 
     @classmethod
     def from_env(cls, env_path: Path | None = None) -> "LMStudioConfig":
@@ -75,12 +78,15 @@ class LMStudioConfig:
             base_url=os.environ.get("LM_STUDIO_BASE_URL", "").strip() or defaults.base_url,
             timeout_sec=float(os.environ.get("LM_STUDIO_REQUEST_TIMEOUT_SEC", "") or defaults.timeout_sec),
             model_override=os.environ.get("LM_STUDIO_MODEL_OVERRIDE", "").strip() or None,
+            reasoning_effort=os.environ.get("LM_STUDIO_REASONING_EFFORT", "").strip() or None,
         )
 
 
 class LMStudioProvider(LLMProvider):
     def __init__(self, config: LMStudioConfig | None = None) -> None:
         self._config = config or LMStudioConfig()
+        self.last_usage: dict = {}   # usage последнего ответа (токены), для замеров
+        self.last_model: str = ""
 
     def list_models(self) -> list[str]:
         url = f"{self._config.base_url}/models"
@@ -115,7 +121,7 @@ class LMStudioProvider(LLMProvider):
         model = self._resolve_model()
         url = f"{self._config.base_url}/chat/completions"
 
-        body = json.dumps({
+        payload_body: dict = {
             "model": model,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -123,7 +129,10 @@ class LMStudioProvider(LLMProvider):
             ],
             "max_tokens": max_tokens,
             "temperature": 0.8,
-        }).encode("utf-8")
+        }
+        if self._config.reasoning_effort:
+            payload_body["reasoning_effort"] = self._config.reasoning_effort
+        body = json.dumps(payload_body).encode("utf-8")
 
         request = urllib.request.Request(
             url, data=body, method="POST", headers={"Content-Type": "application/json"}
@@ -135,6 +144,8 @@ class LMStudioProvider(LLMProvider):
         except (urllib.error.URLError, TimeoutError) as exc:
             raise LLMUnavailableError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
 
+        self.last_usage = payload.get("usage", {}) or {}
+        self.last_model = model
         try:
             raw_content = payload["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError) as exc:
