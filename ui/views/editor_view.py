@@ -75,6 +75,7 @@ class EditorView(QWidget):
             [TimelineMoment(r.start_sec, r.end_sec, r.viral_score, r.title) for r in siblings],
             total_duration_sec=max(r.end_sec for r in siblings),
         )
+        self.timeline.select_moment(result.start_sec)   # выбранный клип подсвечен на таймлайне
 
     def _on_timeline_moment_selected(self, start_sec: float, _end_sec: float) -> None:
         source = self._current.source_video if self._current else None

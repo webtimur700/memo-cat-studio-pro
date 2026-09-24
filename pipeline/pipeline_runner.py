@@ -57,6 +57,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WINDOW_SEC = 5.0
 MIN_PAUSE_SEC = 0.35          # промежуток между словами, считающийся паузой (можно резать)
 SPEECH_EDGE_MARGIN_SEC = 0.15
+MIN_RELIABLE_WORDS = 3          # меньше слов при неуверенном определении языка — считаем шумом, а не речью
+RELIABLE_LANGUAGE_PROB = 0.8
 SUBTITLE_BANNER_GAP_PX = 24   # зазор между плашкой и полосой субтитров
 SAMPLE_FPS_SCAN = 1.0     # частота сэмплирования при поиске моментов
 SAMPLE_FPS_CROP = 2.0     # частота сэмплирования при кадрировании внутри момента
@@ -581,6 +583,14 @@ class PipelineRunner:
             transcriber = self._get_transcriber(settings)
             relative = transcriber.transcribe(audio_path, language=settings.subtitles.language)
             language = getattr(transcriber, "last_language", None)
+            probability = getattr(transcriber, "last_language_probability", 1.0)
+            if 0 < len(relative) < MIN_RELIABLE_WORDS and probability < RELIABLE_LANGUAGE_PROB:
+                # 1-2 слова и язык определён неуверенно (на смехе/шуме Whisper "слышит" корейский и т.п.)
+                logger.info(
+                    "Расшифровка {:.1f}-{:.1f}s отброшена как шум: {} слов, язык '{}' ({:.0%})",
+                    start, end, len(relative), language, probability,
+                )
+                relative = []
         except Exception as exc:
             logger.warning(
                 "Транскрипция недоступна для {:.1f}-{:.1f}s видео {}: {} — без субтитров и без текста для LLM",

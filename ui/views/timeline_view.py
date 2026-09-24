@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsRectItem,
@@ -71,6 +71,8 @@ class TimelineView(QWidget):
         super().__init__(parent)
         self._pixels_per_second = PIXELS_PER_SECOND_DEFAULT
         self._moments: list[TimelineMoment] = []
+        self._auto_fit = True   # масштаб подгоняется под ширину, пока пользователь не менял его колесом
+        self._items: list[_MomentItem] = []
 
         self._scene = QGraphicsScene(self)
         self._view = QGraphicsView(self._scene, self)
@@ -79,6 +81,7 @@ class TimelineView(QWidget):
         self._view.setFrameShape(QGraphicsView.Shape.NoFrame)
         self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._view.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)   # без центрирования узкой сцены
         self._view.setFixedHeight(TIMELINE_HEIGHT + 16)
         self._view.viewport().installEventFilter(self)
 
@@ -86,9 +89,39 @@ class TimelineView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._view)
 
-    def set_moments(self, moments: list[TimelineMoment], total_duration_sec: float) -> None:
+        self._scene.selectionChanged.connect(self._emit_selected_moment)   # один раз, а не при каждом set_moments
+
+    def _fit_pixels_per_second(self, total_duration_sec: float) -> float:
+        available = max(self._view.viewport().width(), 300) - 4
+        return min(200.0, max(2.0, available / max(total_duration_sec, 1.0)))
+
+    def _relayout(self, fit: bool) -> None:
+        total_duration = max((m.end_sec for m in self._moments), default=60.0)
+        self._render(self._moments, total_duration, fit)
+
+    def set_moments(self, moments: list[TimelineMoment], total_duration_sec: float, fit: bool = True) -> None:
         self._moments = moments
+        if fit:
+            self._auto_fit = True
+        self._render(moments, total_duration_sec, fit)
+
+    def select_moment(self, start_sec: float) -> None:
+        """Подсвечивает момент, начинающийся в start_sec (без повторного сигнала) и показывает его."""
+        self._scene.blockSignals(True)
+        self._scene.clearSelection()
+        for item in self._items:
+            if abs(item.moment.start_sec - start_sec) < 0.5:
+                item.setSelected(True)
+                self._view.ensureVisible(item, 40, 0)
+        self._scene.blockSignals(False)
+
+    def _render(self, moments: list[TimelineMoment], total_duration_sec: float, fit: bool) -> None:
+        if fit and self._auto_fit:
+            self._pixels_per_second = self._fit_pixels_per_second(total_duration_sec)
+        selected_starts = [it.moment.start_sec for it in self._scene.selectedItems() if isinstance(it, _MomentItem)]
+        self._scene.blockSignals(True)
         self._scene.clear()
+        self._items = []
 
         total_width = max(total_duration_sec * self._pixels_per_second, 400.0)
         self._scene.setSceneRect(0, 0, total_width, TIMELINE_HEIGHT)
@@ -103,12 +136,12 @@ class TimelineView(QWidget):
         for moment in moments:
             item = _MomentItem(moment, self._pixels_per_second)
             item.setZValue(1)
+            item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, True)
             self._scene.addItem(item)
-
-        self._scene.selectionChanged.connect(self._emit_selected_moment)
-        for item in self._scene.items():
-            if isinstance(item, _MomentItem):
-                item.setFlag(item.GraphicsItemFlag.ItemIsSelectable, True)
+            self._items.append(item)
+            if moment.start_sec in selected_starts:
+                item.setSelected(True)
+        self._scene.blockSignals(False)
 
     def _emit_selected_moment(self) -> None:
         selected = [it for it in self._scene.selectedItems() if isinstance(it, _MomentItem)]
@@ -117,14 +150,19 @@ class TimelineView(QWidget):
             self.moment_selected.emit(m.start_sec, m.end_sec)
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        # ширина viewport меняется уже ПОСЛЕ resize родителя, поэтому следим за самим viewport
+        if event.type() == QEvent.Type.Resize and watched is self._view.viewport():
+            if self._auto_fit and self._moments:
+                self._relayout(fit=True)
+            return False
         if event.type() == QWheelEvent.Type.Wheel and watched is self._view.viewport():
             wheel_event: QWheelEvent = event
+            self._auto_fit = False   # пользователь взял масштаб в свои руки
             if wheel_event.angleDelta().y() > 0:
                 self._pixels_per_second = min(self._pixels_per_second * 1.15, 200.0)
             else:
                 self._pixels_per_second = max(self._pixels_per_second / 1.15, 2.0)
             if self._moments:
-                total_duration = max((m.end_sec for m in self._moments), default=60.0)
-                self.set_moments(self._moments, total_duration)
+                self._relayout(fit=False)
             return True
         return False

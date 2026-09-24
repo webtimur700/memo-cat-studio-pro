@@ -118,3 +118,57 @@ def test_duplicates_are_not_added_twice(qapp, output_dir):
     view.add_results(results)
     view.add_results(results)
     assert view.clip_list.count() == 2
+
+
+def test_timeline_fits_all_moments_in_view_without_scrolling(qapp):
+    from ui.views.timeline_view import TimelineMoment, TimelineView
+
+    view = TimelineView()
+    view.resize(900, 100)
+    view.show()
+    qapp.processEvents()
+    view.set_moments([TimelineMoment(101.0, 120.0, 79, "a"), TimelineMoment(150.0, 165.0, 83, "b")], 165.0)
+    viewport_width = view._view.viewport().width()
+    assert view._scene.sceneRect().width() <= viewport_width + 5          # всё видно без прокрутки
+    assert not view._view.horizontalScrollBar().isVisible() or view._view.horizontalScrollBar().maximum() == 0
+    # последний момент целиком внутри видимой области
+    last = view._items[-1].sceneBoundingRect()
+    assert last.right() <= viewport_width + 5
+
+
+def test_timeline_refits_on_resize_but_not_after_user_zoom(qapp):
+    from ui.views.timeline_view import TimelineMoment, TimelineView
+
+    view = TimelineView()
+    view.resize(600, 100)
+    view.show()
+    view.set_moments([TimelineMoment(10.0, 30.0, 70, "a")], 100.0)
+    narrow = view._pixels_per_second
+    view.resize(1200, 100)
+    qapp.processEvents()
+    assert view._pixels_per_second > narrow                                # подстроился под ширину
+    view._auto_fit = False
+    fixed = view._pixels_per_second
+    view.resize(700, 100)
+    qapp.processEvents()
+    assert view._pixels_per_second == fixed                                # ручной масштаб не трогаем
+
+
+def test_selecting_clip_highlights_its_moment_on_timeline(qapp, output_dir):
+    view = EditorView()
+    view.add_results(load_results_from_dir(output_dir))
+    view.clip_list.setCurrentRow(1)
+    selected = [i.moment.start_sec for i in view.timeline._scene.selectedItems() if hasattr(i, "moment")]
+    assert selected == [view.current.start_sec]
+
+
+def test_selection_signal_is_emitted_once_per_click(qapp):
+    from ui.views.timeline_view import TimelineMoment, TimelineView
+
+    view = TimelineView()
+    emitted = []
+    view.moment_selected.connect(lambda s, e: emitted.append(s))
+    for _ in range(3):   # раньше каждое set_moments добавляло ещё одно подключение сигнала
+        view.set_moments([TimelineMoment(10.0, 30.0, 70, "a"), TimelineMoment(40.0, 60.0, 80, "b")], 100.0)
+    view._items[1].setSelected(True)
+    assert emitted == [40.0]

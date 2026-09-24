@@ -91,3 +91,40 @@ def test_transcription_failure_degrades_to_no_words(sample_video, tmp_path, monk
     runner = PipelineRunner(output_dir=tmp_path)
     monkeypatch.setattr(runner, "_get_transcriber", lambda _s: (_ for _ in ()).throw(RuntimeError("no model")))
     assert runner._transcribe_moment(sample_video, Moment(0.0, 5.0, 80, 0.5, ()), UserSettings()) == []
+
+
+def test_tiny_unsure_transcription_is_treated_as_noise(sample_video, tmp_path, monkeypatch):
+    import subtitles.subtitle_service as subtitle_service
+
+    class NoisyTranscriber:
+        last_language = "ko"
+        last_language_probability = 0.6
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def transcribe(self, audio_path, language=None):
+            return [WordTiming("음", 0.1, 0.4)]
+
+    monkeypatch.setattr(subtitle_service, "WhisperTranscriber", NoisyTranscriber)
+    runner = PipelineRunner(output_dir=tmp_path)
+    assert runner._transcribe_moment(sample_video, Moment(0.0, 5.0, 80, 0.5, ()), UserSettings()) == []
+
+
+def test_confident_short_transcription_is_kept(sample_video, tmp_path, monkeypatch):
+    import subtitles.subtitle_service as subtitle_service
+
+    class ClearTranscriber:
+        last_language = "ru"
+        last_language_probability = 0.97
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def transcribe(self, audio_path, language=None):
+            return [WordTiming("привет", 0.1, 0.5)]
+
+    monkeypatch.setattr(subtitle_service, "WhisperTranscriber", ClearTranscriber)
+    runner = PipelineRunner(output_dir=tmp_path)
+    words = runner._transcribe_moment(sample_video, Moment(0.0, 5.0, 80, 0.5, ()), UserSettings())
+    assert [w.text for w in words] == ["привет"]
