@@ -60,9 +60,29 @@ def check_faster_whisper_cache() -> None:
     print("[ok] Модель faster-whisper закэширована")
 
 
+YAMNET_BASE_URL = "https://huggingface.co/zeropointnine/yamnet-onnx/resolve/main"   # Apache-2.0, конвертация Google YAMNet
+
+
+def download_yamnet() -> None:
+    """YAMNet (AudioSet, 521 класс: лай, мяуканье, смех...) в ONNX для audio/event_classifier.py."""
+    import urllib.request
+
+    target = MODELS_DIR / "yamnet"
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("yamnet.onnx", "yamnet_class_map.csv"):
+        path = target / name
+        if path.exists():
+            print(f"[skip] {path} уже существует")
+            continue
+        print(f"Скачивание {name}...")
+        urllib.request.urlretrieve(f"{YAMNET_BASE_URL}/{name}", path)
+        print(f"[ok] Сохранено: {path}")
+
+
 def main() -> None:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     export_yolo11_to_onnx()
+    download_yamnet()
     check_faster_whisper_cache()
     print("\nВсе модели подготовлены. Можно запускать приложение офлайн.")
 

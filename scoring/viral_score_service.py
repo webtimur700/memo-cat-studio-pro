@@ -1,14 +1,11 @@
 """Формула Viral Score (Функция 3).
 
-ЧЕСТНО: в конфиге (config/default_settings.yaml) заложены веса для 5
-сигналов — motion_intensity, scene_change, audio_event, face_prominence,
-speech_presence. Модуль audio/ (детекция лая/мяу/смеха, VAD) в проекте пока
-не реализован — это отдельный кусок работы. Чтобы формула не занижала все
-оценки из-за отсутствующих ~40% веса (audio_event+speech_presence), она
-перенормируется на сумму РЕАЛЬНО используемых весов (motion+scene+face) —
-то есть Viral Score пока отражает только визуальную часть "интересности",
-без звука. Когда audio/ появится — добавится audio_score без изменения
-сигнатуры вызова.
+В конфиге (config/default_settings.yaml) заложены веса для 5 сигналов — motion_intensity,
+scene_change, audio_event, face_prominence, speech_presence. Сейчас считаются motion, scene,
+face и (если найден YAMNet, audio/event_classifier.py) audio_event — лай/мяуканье/смех.
+Веса нормируются на сумму РЕАЛЬНО использованных сигналов: нет YAMNet или у видео нет звука —
+audio_event выпадает из формулы, а не занижает все оценки на его долю. speech_presence пока
+не считается (нужен VAD).
 """
 
 from __future__ import annotations
@@ -25,6 +22,7 @@ class ScoreInputs:
     motion_intensity: float       # 0..1
     detection_presence: float     # 0..1, доля кадров окна с детекцией
     scene_change_count: int
+    audio_event: float | None = None   # 0..1, звуковые события окна; None — классификатор недоступен
 
 
 def compute_viral_score(inputs: ScoreInputs, weights: ViralScoreSettings) -> int:
@@ -33,6 +31,8 @@ def compute_viral_score(inputs: ScoreInputs, weights: ViralScoreSettings) -> int
     used_weight_sum = (
         weights.weight_motion_intensity + weights.weight_scene_change + weights.weight_face_prominence
     )
+    if inputs.audio_event is not None:
+        used_weight_sum += weights.weight_audio_event
     if used_weight_sum <= 0:
         return 0
 
@@ -40,6 +40,7 @@ def compute_viral_score(inputs: ScoreInputs, weights: ViralScoreSettings) -> int
         weights.weight_motion_intensity * inputs.motion_intensity
         + weights.weight_scene_change * scene_change_score
         + weights.weight_face_prominence * inputs.detection_presence
+        + weights.weight_audio_event * (inputs.audio_event or 0.0)
     )
     normalized = raw / used_weight_sum
     return max(0, min(100, round(normalized * 100)))

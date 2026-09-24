@@ -27,6 +27,7 @@ import cv2
 import numpy as np
 from loguru import logger
 
+from audio.event_classifier import AudioEventTimeline
 from audio.music_mixer import list_tracks, mix_music, pick_track, probe_duration, speech_intervals
 from core.entities.clip import Clip
 from core.entities.detection import BoundingBox, Detection, is_animal_class
@@ -160,7 +161,10 @@ class PipelineRunner:
         scenes = self._detect_scenes_safely(video_path)
 
         emit("scoring")
-        window_scores = self._scan_windows(video_path, source.duration_sec, detector, scenes)
+        audio_events = self._analyze_audio_events(video_path)
+        window_scores = self._scan_windows(
+            video_path, source.duration_sec, detector, scenes, audio_events, settings.viral_score
+        )
 
         emit("cutting")
         scene_boundaries = sorted(
@@ -192,6 +196,17 @@ class PipelineRunner:
         return clips
 
     # ------------------------------------------------------------------
+    def _analyze_audio_events(self, video_path: Path) -> AudioEventTimeline | None:
+        classifier = self._shared.event_classifier()
+        if classifier is None:
+            return None
+        try:
+            timeline = classifier.analyze_video(video_path)   # type: ignore[attr-defined]
+        except Exception as exc:
+            logger.warning("Звуковые события недоступны для {}: {} — оценка без звука", video_path.name, exc)
+            return None
+        return timeline if timeline.frame_scores.size else None
+
     def _detect_scenes_safely(self, video_path: Path) -> list[SceneSegment]:
         try:
             return SceneDetector().detect(video_path)
@@ -205,9 +220,11 @@ class PipelineRunner:
         duration_sec: float,
         detector: _DetectorHandle,
         scenes: list[SceneSegment],
+        audio_events: AudioEventTimeline | None = None,
+        weights: ViralScoreSettings | None = None,
     ) -> list[WindowScore]:
         results: list[WindowScore] = []
-        default_weights = ViralScoreSettings()
+        default_weights = weights or ViralScoreSettings()
 
         with FrameExtractor(video_path) as extractor:
             window_start = 0.0
@@ -251,7 +268,10 @@ class PipelineRunner:
                 scene_change_count = sum(1 for s in scenes if window_start < s.start_sec < window_end)
 
                 score = compute_viral_score(
-                    ScoreInputs(motion_intensity, detection_presence, scene_change_count),
+                    ScoreInputs(
+                        motion_intensity, detection_presence, scene_change_count,
+                        audio_event=audio_events.score_between(window_start, window_end) if audio_events is not None else None,
+                    ),
                     default_weights,
                 )
 

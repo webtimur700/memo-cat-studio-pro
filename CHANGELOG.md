@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### Добавлено — звуковые события в Viral Score
+- `audio/event_classifier.py`: YAMNet (AudioSet, ONNX, `models/yamnet/`, скачивается `scripts/download_models.py`) на CPU
+  находит лай, мяуканье, мурлыканье, шипение, смех; 5 с на 31-минутное видео, память ограничена порциями по минуте
+- Сигнал `audio_event` подключён к формуле (`ScoreInputs.audio_event`); нет модели или звука — формула как раньше
+- Общий для очереди классификатор (`SharedModels.event_classifier`); веса классов и порог насыщения — в модуле
+- `scripts/compare_audio_scoring.py` и `docs/audio_events.md`: как изменился отбор на `myvideo.mp4` (совпали 2 из 10
+  моментов) и что проверено, а что нет
+
 ### Добавлено — фоновая музыка с приглушением на речи
 - `audio/music_mixer.py`: трек из `assets/music/` (кладёт пользователь; в git не попадает, `assets/music/*` в `.gitignore`)
   подмешивается в готовый клип, видео копируется без перекодирования; оригинальный звук (в том числе звуки животных)

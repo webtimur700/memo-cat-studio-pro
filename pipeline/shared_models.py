@@ -23,9 +23,12 @@ class SharedModels:
         self._detector: object | None = None
         self._detector_tried = False
         self._transcribers: dict[tuple[str, str], object] = {}
+        self._event_classifier: object | None = None
+        self._event_classifier_tried = False
         self.transcribe_lock = threading.Lock()
         self.detector_loads = 0
         self.transcriber_loads = 0
+        self.event_classifier_loads = 0
 
     def detector(self) -> object | None:
         """YOLO-детектор или None, если модели нет / она не загрузилась (попытка одна)."""
@@ -51,6 +54,19 @@ class SharedModels:
                         logger.warning("Не удалось загрузить YOLO11 ({}): {} — работаю без детекции", model_path, exc)
             return self._detector
 
+    def event_classifier(self) -> object | None:
+        """YAMNet для звуковых событий или None, если модели нет (тогда Viral Score считается без звука)."""
+        with self._lock:
+            if not self._event_classifier_tried:
+                self._event_classifier_tried = True
+                from audio.event_classifier import AudioEventClassifier
+
+                self._event_classifier = AudioEventClassifier.load(self._models_dir / "yamnet")
+                if self._event_classifier is not None:
+                    self.event_classifier_loads += 1
+                    logger.info("YAMNet загружен (общий для очереди)")
+            return self._event_classifier
+
     def transcriber(self, model_size: str, compute_type: str) -> object:
         key = (model_size, compute_type)
         with self._lock:
@@ -68,3 +84,5 @@ class SharedModels:
             self._detector = None
             self._detector_tried = False
             self._transcribers.clear()
+            self._event_classifier = None
+            self._event_classifier_tried = False
