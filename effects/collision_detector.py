@@ -114,3 +114,35 @@ def resolve_banner_position(
         preferred_position, frame_width, frame_height, banner_width, banner_height
     )
     return CollisionResolution(preferred_position, fallback_rect, was_repositioned=False)
+
+
+def resolve_banner_position_over_time(
+    preferred_position: BannerPosition,
+    obstacles: list[BoundingBox],
+    frame_width: int,
+    frame_height: int,
+    banner_width: int,
+    banner_height: int,
+) -> CollisionResolution:
+    """Позиция плашки на ВЕСЬ период показа: obstacles — зоны, которые нельзя
+    закрывать (голова животного в разные моменты показа, логотип, кнопка).
+
+    Кандидаты перебираются в том же порядке, что и в resolve_banner_position;
+    выбирается первый, чей худший (максимальный по всем зонам) overlap ниже
+    порога. Если свободной позиции нет — та, где худший overlap минимален
+    (а не слепо предпочтительная).
+    """
+    candidates = [preferred_position] + _FALLBACK_ORDER.get(preferred_position, [])
+    best: tuple[float, int, BannerPosition, BoundingBox] | None = None
+
+    for index, position in enumerate(candidates):
+        rect = compute_banner_rect(position, frame_width, frame_height, banner_width, banner_height)
+        worst = max((_overlap_area_ratio(rect, zone) for zone in obstacles), default=0.0)
+        if worst < MIN_OVERLAP_AREA_RATIO_FOR_COLLISION:
+            return CollisionResolution(position, rect, was_repositioned=index > 0)
+        if best is None or worst < best[0] - 1e-9:
+            best = (worst, index, position, rect)
+
+    assert best is not None
+    _, index, position, rect = best
+    return CollisionResolution(position, rect, was_repositioned=index > 0)

@@ -181,6 +181,21 @@ class BrandingOverlay:
     def is_empty(self) -> bool:
         return self.logo is None and self.subscribe is None
 
+    def obstacle_rects(self, window_start_sec: float, window_end_sec: float) -> list[tuple[int, int, int, int]]:
+        """Прямоугольники (x1, y1, x2, y2) логотипа и кнопки Subscribe, которые
+        видны в интервале [window_start_sec, window_end_sec] — для обхода плашкой."""
+        rects: list[tuple[int, int, int, int]] = []
+        if self.logo is not None:
+            x, y = logo_xy(self.logo_position, self.frame_size, self.logo.size)
+            rects.append((x, y, x + self.logo.width, y + self.logo.height))
+        if self.subscribe is not None:
+            visible_from = SUBSCRIBE_APPEAR_AT_SEC
+            visible_to = SUBSCRIBE_APPEAR_AT_SEC + SUBSCRIBE_VISIBLE_SEC
+            if visible_from < window_end_sec and window_start_sec < visible_to:
+                x, y = subscribe_xy(self.logo_position, self.frame_size, self.subscribe.size)
+                rects.append((x, y, x + self.subscribe.width, y + self.subscribe.height))
+        return rects
+
     def draw_on(self, canvas: Image.Image, t: float) -> bool:
         """Рисует на canvas (RGBA, изменяется на месте). True, если что-то нарисовано."""
         drawn = False

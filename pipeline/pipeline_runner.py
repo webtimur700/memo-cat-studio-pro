@@ -37,7 +37,8 @@ from core.entities.subtitle import WordTiming
 from cutting.clip_selector_service import WindowScore, select_moments
 from effects.branding_overlay import BrandingOverlay, resolve_logo_path
 from effects.cover_generator import generate_cover
-from effects.collision_detector import BannerPosition, resolve_banner_position
+from core.entities.detection import BoundingBox
+from effects.collision_detector import BannerPosition, resolve_banner_position_over_time
 from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
 from llm.content_generator import ClipContent, generate_clip_content
@@ -49,6 +50,7 @@ from video.frame_extractor import FrameExtractor
 from video.ingestion_service import IngestionService
 from video.scene_detector import SceneDetector
 from vision.smart_crop import CropWindow, SmartCropPlanner
+from vision.mediapipe_face import AnimalHeadRegionEstimator
 from vision.tracker import ObjectTracker
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -71,6 +73,16 @@ def _frame_motion_score(prev_gray: np.ndarray, curr_gray: np.ndarray) -> float:
     """
     diff = cv2.absdiff(prev_gray, curr_gray)
     return min(1.0, float(diff.mean()) / MOTION_NORMALIZATION)
+
+
+def _motion_direction_x(detections: list[Detection]) -> float:
+    """-1..1: горизонтальный сдвиг центра bbox между двумя последними детекциями
+    трека относительно ширины bbox (голова животного смещена по ходу движения)."""
+    if len(detections) < 2:
+        return 0.0
+    prev, curr = detections[-2].bbox, detections[-1].bbox
+    prev_cx, curr_cx = (prev.x1 + prev.x2) / 2, (curr.x1 + curr.x2) / 2
+    return max(-1.0, min(1.0, (curr_cx - prev_cx) / max(curr.width, 1.0)))
 
 
 @dataclass
@@ -250,10 +262,14 @@ class PipelineRunner:
         detector: _DetectorHandle,
         settings: UserSettings,
     ) -> Clip | None:
-        crop_samples = self._build_crop_samples(video_path, source, moment, detector, settings)
+        crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
         words = self._transcribe_moment(video_path, moment, settings)
         subtitle_ass_path = self._write_subtitles(video_path, moment, words, settings)
-        banner_rect = self._build_banner_rect(source, settings)
+        branding = self._build_branding(settings)
+        banner_appear_sec, banner_duration_sec = 4.0, 5.0
+        banner_rect = self._build_banner_rect(
+            settings, crop_samples, head_regions, branding, banner_appear_sec, banner_duration_sec
+        )
 
         output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
 
@@ -264,9 +280,9 @@ class PipelineRunner:
             subtitle_ass_path=subtitle_ass_path,
             banner_rect=banner_rect,
             banner_text_lines=list(settings.branding.banner_text_lines),
-            banner_appear_at_sec=4.0,
-            banner_duration_sec=5.0,
-            branding=self._build_branding(settings),
+            banner_appear_at_sec=banner_appear_sec,
+            banner_duration_sec=banner_duration_sec,
+            branding=branding,
             settings=settings.export,
             source_start_sec=moment.start_sec,
         )
@@ -402,7 +418,10 @@ class PipelineRunner:
 
     def _build_crop_samples(
         self, video_path: Path, source, moment: Moment, detector: _DetectorHandle, settings: UserSettings
-    ) -> list[CropSample]:
+    ) -> tuple[list[CropSample], list[BoundingBox | None]]:
+        """Сэмплы автокадрирования + для каждого сэмпла зона головы животного в
+        координатах ИСХОДНОГО кадра (None — животного нет / детектор недоступен).
+        """
         planner = SmartCropPlanner(
             source.width,
             source.height,
@@ -412,6 +431,8 @@ class PipelineRunner:
         )
         tracker = ObjectTracker()
         samples: list[CropSample] = []
+        head_regions: list[BoundingBox | None] = []
+        head_estimator = AnimalHeadRegionEstimator()
 
         with FrameExtractor(video_path) as extractor:
             for timestamp, frame in extractor.frames_in_range(
@@ -419,6 +440,7 @@ class PipelineRunner:
             ):
                 relative_t = timestamp - moment.start_sec
                 detection = None
+                head_region: BoundingBox | None = None
 
                 if detector.available:
                     frame_detections = detector.detect(frame)
@@ -430,8 +452,11 @@ class PipelineRunner:
                     primary = tracker.primary_track()
                     if primary is not None:
                         detection = primary.last_detection
+                        if primary.is_active:
+                            head_region = head_estimator.estimate(detection, _motion_direction_x(primary.detections))
 
                 window = planner.plan_frame(detection)
+                head_regions.append(head_region)
                 samples.append(
                     CropSample(
                         relative_t,
@@ -450,6 +475,7 @@ class PipelineRunner:
                     CropWindow(center.x1, center.y1, center.x2, center.y2, 1.0, moment.duration_sec),
                 ),
             ]
+            head_regions = [None, None]
         elif samples[-1].timestamp_sec < moment.duration_sec - 1e-3:
             # Сэмплы идут с шагом 1/SAMPLE_FPS_CROP, последний обычно не доходит до
             # конца момента; длина клипа берётся из последнего сэмпла, поэтому
@@ -461,8 +487,9 @@ class PipelineRunner:
                     CropWindow(last.x1, last.y1, last.x2, last.y2, last.zoom_factor, moment.duration_sec),
                 )
             )
+            head_regions.append(head_regions[-1])
 
-        return samples
+        return samples, head_regions
 
     def _get_transcriber(self, settings: UserSettings):
         """Один WhisperTranscriber на весь прогон видео: модель грузится в память
@@ -512,7 +539,53 @@ class PipelineRunner:
             logger.warning("Не удалось собрать субтитры для момента {:.1f}s: {}", moment.start_sec, exc)
             return None
 
-    def _build_banner_rect(self, source, settings: UserSettings) -> tuple[int, int, int, int]:
+    def _banner_obstacles(
+        self,
+        settings: UserSettings,
+        crop_samples: list[CropSample],
+        head_regions: list[BoundingBox | None],
+        branding: BrandingOverlay | None,
+        appear_sec: float,
+        duration_sec: float,
+    ) -> list[BoundingBox]:
+        """Зоны выходного кадра (px), которые плашка не должна закрывать за время
+        показа: голова животного (пересчитана из исходных координат через окно
+        кропа каждого сэмпла) и логотип/Subscribe."""
+        out_w, out_h = settings.export.width, settings.export.height
+        obstacles: list[BoundingBox] = []
+
+        for sample, head in zip(crop_samples, head_regions):
+            if head is None or not (appear_sec <= sample.timestamp_sec <= appear_sec + duration_sec):
+                continue
+            window = sample.window
+            crop_w, crop_h = window.x2 - window.x1, window.y2 - window.y1
+            if crop_w <= 0 or crop_h <= 0:
+                continue
+            sx, sy = out_w / crop_w, out_h / crop_h
+            # обе границы зажимаем в кадр: зона вне окна кропа схлопывается в пустой прямоугольник
+            x1 = min(float(out_w), max(0.0, (head.x1 - window.x1) * sx))
+            x2 = min(float(out_w), max(0.0, (head.x2 - window.x1) * sx))
+            y1 = min(float(out_h), max(0.0, (head.y1 - window.y1) * sy))
+            y2 = min(float(out_h), max(0.0, (head.y2 - window.y1) * sy))
+            if x2 - x1 > 1 and y2 - y1 > 1:
+                obstacles.append(BoundingBox(x1, y1, x2, y2))
+
+        if branding is not None:
+            obstacles += [
+                BoundingBox(*map(float, rect))
+                for rect in branding.obstacle_rects(appear_sec, appear_sec + duration_sec)
+            ]
+        return obstacles
+
+    def _build_banner_rect(
+        self,
+        settings: UserSettings,
+        crop_samples: list[CropSample],
+        head_regions: list[BoundingBox | None],
+        branding: BrandingOverlay | None,
+        appear_sec: float,
+        duration_sec: float,
+    ) -> tuple[int, int, int, int]:
         width, height = settings.export.width, settings.export.height
         banner_width, banner_height = int(width * 0.85), 220
 
@@ -521,11 +594,19 @@ class PipelineRunner:
         except ValueError:
             preferred_position = BannerPosition.BOTTOM_CENTER
 
-        # animal_head_region=None: полноценный collision detection требует
-        # покадровой позиции животного на протяжении всего показа плашки —
-        # в этой версии оркестратора банер ставится статично по настройкам
-        # пользователя, без динамического обхода коллизий (это отдельный
-        # кусок доработки поверх effects/collision_detector.py).
-        resolution = resolve_banner_position(preferred_position, None, width, height, banner_width, banner_height)
+        obstacles: list[BoundingBox] = []
+        if settings.branding.collision_avoidance:
+            obstacles = self._banner_obstacles(
+                settings, crop_samples, head_regions, branding, appear_sec, duration_sec
+            )
+
+        resolution = resolve_banner_position_over_time(
+            preferred_position, obstacles, width, height, banner_width, banner_height
+        )
+        if resolution.was_repositioned:
+            logger.info(
+                "Плашка сдвинута {} -> {}: обход головы животного/логотипа/Subscribe",
+                preferred_position.value, resolution.final_position.value,
+            )
         rect = resolution.final_rect
         return (int(rect.x1), int(rect.y1), int(rect.x2), int(rect.y2))
