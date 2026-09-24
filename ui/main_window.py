@@ -29,33 +29,14 @@ from core.entities.settings import UserSettings
 from ui.pipeline_worker import PipelineWorker
 from ui.views.batch_queue_view import BatchQueueView, JobStage
 from ui.views.project_view import ProjectView
-from ui.views.preview_player import PreviewPlayer
+from ui.views.editor_view import EditorView
 from ui.views.settings_view import SettingsView
-from ui.views.timeline_view import TimelineMoment, TimelineView
+from ui.views.timeline_view import TimelineMoment
+from ui.viewmodels.clip_results import ClipResult, load_results_from_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 EXPORT_OUTPUT_DIR = PROJECT_ROOT / "export" / "output"
-
-
-class EditorView(QWidget):
-    """Экран редактора: таймлайн сверху, предпросмотр снизу — объединяет
-    timeline_view.py и preview_player.py в единый рабочий экран.
-    """
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.timeline = TimelineView(self)
-        self.preview = PreviewPlayer(self)
-        self.timeline.moment_selected.connect(
-            lambda start, _end: self.preview.seek_to(start)
-        )
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
-        layout.addWidget(self.preview, stretch=1)
-        layout.addWidget(self.timeline)
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +48,7 @@ class MainWindow(QMainWindow):
         settings_path = PROJECT_ROOT / "config" / "default_settings.yaml"
         self._settings = UserSettings.load_from_yaml(settings_path)
         self._workers: dict[str, PipelineWorker] = {}
+        self._job_videos: dict[str, str] = {}   # job_id -> имя исходного видео
 
         central = QWidget()
         central.setObjectName("centralWidget")
@@ -90,6 +72,9 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._stack, stretch=1)
 
         self._wire_pipeline_signals()
+
+        # результаты прошлых запусков (json + клипы в папке экспорта) не пропадают после перезапуска
+        self.editor_view.add_results(load_results_from_dir(EXPORT_OUTPUT_DIR))
 
     def _build_sidebar(self) -> tuple[QWidget, QButtonGroup]:
         sidebar = QWidget()
@@ -121,6 +106,7 @@ class MainWindow(QMainWindow):
             for path in paths:
                 job_id = f"job_{abs(hash(str(path)))}_{len(self._workers)}"
                 self.batch_view.add_job(job_id, path.name)
+                self._job_videos[job_id] = path.name
                 self.batch_view.update_progress(job_id, JobStage.QUEUED)
 
                 worker = PipelineWorker(
@@ -171,14 +157,22 @@ class MainWindow(QMainWindow):
     def _on_pipeline_finished(self, job_id: str, clips: list) -> None:
         self.batch_view.update_progress(job_id, JobStage.DONE, moments_found=len(clips))
         logger.info("Готово: {} клип(ов) для job {}", len(clips), job_id)
-        if clips:
-            durations = [f"{c.moment.start_sec:.0f}-{c.moment.end_sec:.0f}s (score {c.moment.viral_score})" for c in clips]
-            self.editor_view.timeline.set_moments(
-                [TimelineMoment(c.moment.start_sec, c.moment.end_sec, c.moment.viral_score, c.title) for c in clips],
-                total_duration_sec=max(c.moment.end_sec for c in clips),
-            )
-            logger.info("Найденные моменты: {}", ", ".join(durations))
         self._workers.pop(job_id, None)
+        source_name = self._job_videos.pop(job_id, "")
+        if not clips:
+            return
+        durations = [f"{c.moment.start_sec:.0f}-{c.moment.end_sec:.0f}s (score {c.moment.viral_score})" for c in clips]
+        logger.info("Найденные моменты: {}", ", ".join(durations))
+        self.editor_view.add_results([ClipResult.from_clip(c, source_name) for c in clips])
+        if not self._workers:  # все задачи завершены — показываем результаты
+            self.show_page(1)
+
+    def show_page(self, index: int) -> None:
+        """Переключает экран и синхронизирует подсветку кнопки в боковой панели."""
+        self._stack.setCurrentIndex(index)
+        button = self._nav_group.button(index)
+        if button is not None:
+            button.setChecked(True)
 
     def _on_pipeline_failed(self, job_id: str, error_message: str) -> None:
         self.batch_view.mark_failed(job_id, error_message)

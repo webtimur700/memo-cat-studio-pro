@@ -172,3 +172,83 @@ QTabBar::tab:selected {
     color: #ffffff;
     border-bottom: 2px solid #7c5cff;
 }
+
+
+/* --- Результаты: список клипов и детали --- */
+QListWidget#clipList {
+    background: #17171c;
+    border: 1px solid #26262e;
+    border-radius: 12px;
+    outline: none;
+}
+
+QListWidget#clipList::item {
+    border-radius: 10px;
+    margin: 3px;
+}
+
+QListWidget#clipList::item:selected {
+    background: #26214a;
+    border: 1px solid #7c5cff;
+}
+
+QListWidget#clipList::item:hover:!selected {
+    background: #1f1f26;
+}
+
+QLabel#clipThumb {
+    background: #0e0e11;
+    border-radius: 8px;
+    color: #5a5a60;
+}
+
+QLabel#clipTitle {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QLabel#clipMeta {
+    color: #96969a;
+}
+
+QLabel#detailsHeader {
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+QLabel#sectionLabel {
+    color: #b8b8c0;
+    font-weight: 700;
+    margin-top: 6px;
+}
+
+QPushButton#copyButton {
+    background: #26262e;
+    border: 1px solid #34343e;
+    border-radius: 8px;
+    padding: 4px 10px;
+    color: #ebebf0;
+}
+
+QPushButton#copyButton:hover {
+    background: #30303a;
+}
+
+QPushButton#copyButton:disabled {
+    color: #5a5a60;
+}
+
+QPlainTextEdit {
+    background: #17171c;
+    border: 1px solid #26262e;
+    border-radius: 8px;
+    color: #ebebf0;
+}
+
+/* панель деталей: прозрачные фоны (иначе у QScrollArea светлый фон по умолчанию) */
+QScrollArea#detailsScroll,
+QScrollArea#detailsScroll > QWidget > QWidget#detailsContent {
+    background: transparent;
+    border: none;
+}

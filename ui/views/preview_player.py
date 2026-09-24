@@ -46,6 +46,8 @@ class PreviewPlayer(QWidget):
         self._player.positionChanged.connect(self._on_position_changed)
         self._player.durationChanged.connect(self._on_duration_changed)
         self._player.playbackStateChanged.connect(self._on_playback_state_changed)
+        self._player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self._pause_when_loaded = False
 
         controls_layout = QHBoxLayout()
         controls_layout.addWidget(self._play_button)
@@ -57,8 +59,28 @@ class PreviewPlayer(QWidget):
         root_layout.addWidget(self._video_widget, stretch=1)
         root_layout.addLayout(controls_layout)
 
-    def load_video(self, path: Path) -> None:
+    @property
+    def source_path(self) -> Path | None:
+        url = self._player.source()
+        return Path(url.toLocalFile()) if url.isLocalFile() else None
+
+    def load_video(self, path: Path, autoplay: bool = False) -> None:
+        """Загружает клип; pause() показывает первый кадр вместо чёрного экрана."""
+        self._pause_when_loaded = not autoplay
         self._player.setSource(QUrl.fromLocalFile(str(path)))
+        if autoplay:
+            self._player.play()
+
+    def play(self) -> None:
+        self._player.play()
+
+    def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
+        # pause() до окончания загрузки ничего не показывает; после — выводит первый кадр
+        if self._pause_when_loaded and status in (
+            QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia
+        ):
+            self._pause_when_loaded = False
+            self._player.pause()
 
     def seek_to(self, seconds: float) -> None:
         self._player.setPosition(int(seconds * 1000))
@@ -82,3 +104,4 @@ class PreviewPlayer(QWidget):
 
     def _on_duration_changed(self, duration_ms: int) -> None:
         self._position_slider.setRange(0, duration_ms)
+        self._time_label.setText(f"{_format_ms(self._player.position())} / {_format_ms(duration_ms)}")
