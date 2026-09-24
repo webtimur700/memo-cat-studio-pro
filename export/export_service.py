@@ -38,6 +38,7 @@ from PIL import Image
 from animation.promo_banner_animator import compute_banner_animation_state, render_banner_on_frame
 from core.exceptions import FFmpegExecutionError
 from core.entities.settings import ExportSettings
+from effects.branding_overlay import BrandingOverlay
 from export.dynamic_crop import CropSample, build_dynamic_crop_filter
 from export.quality_presets import resolve_quality_preset
 
@@ -51,14 +52,16 @@ def _run(command: list[str], cwd: Path | None = None) -> None:
 def render_banner_overlay_clip(
     output_path: Path,
     clip_duration_sec: float,
-    banner_rect: tuple[int, int, int, int],
+    banner_rect: tuple[int, int, int, int] | None,
     banner_text_lines: list[str],
     appear_at_sec: float,
     banner_duration_sec: float,
     frame_size: tuple[int, int],
     fps: int = 30,
+    branding: BrandingOverlay | None = None,
 ) -> Path:
-    """Рендерит ТОЛЬКО анимированную плашку (прозрачный фон) на весь клип —
+    """Рендерит ТОЛЬКО анимированные оверлеи (прозрачный фон) на весь клип: плашку
+    (если задан banner_rect), логотип и кнопку Subscribe (если задан branding) —
     PNG-последовательность через Pillow, затем кодируется в MOV/qtrle с
     реально сохранённым альфа-каналом (см. честное примечание в docstring
     модуля про WebM/VP9). output_path должен иметь расширение .mov.
@@ -77,14 +80,19 @@ def render_banner_overlay_clip(
             elapsed_since_appear = t - appear_at_sec
             state = compute_banner_animation_state(elapsed_since_appear, banner_duration_sec)
 
-            if state.visible and state.opacity > 0.01:
+            if banner_rect is not None and state.visible and state.opacity > 0.01:
                 frame_img = render_banner_on_frame(
                     transparent_frame, state, banner_rect, banner_text_lines
                 )
             else:
                 frame_img = transparent_frame
 
-            frame_img.save(tmp_path / f"frame_{frame_index:06d}.png")
+            if branding is not None and not branding.is_empty:
+                canvas = frame_img.copy()  # transparent_frame общий — его нельзя менять на месте
+                if branding.draw_on(canvas, t):
+                    frame_img = canvas
+
+            frame_img.save(tmp_path / f"frame_{frame_index:06d}.png", compress_level=1)
 
         _run([
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -108,6 +116,8 @@ class ExportPlan:
     banner_appear_at_sec: float
     banner_duration_sec: float
     settings: ExportSettings
+    branding: BrandingOverlay | None = None
+    """Логотип + кнопка Subscribe для overlay-ролика (None — без них)."""
     source_start_sec: float = 0.0
     """Абсолютное время начала момента в ИСХОДНОМ видео (секунды).
 
@@ -168,7 +178,8 @@ class ExportService:
             logger.debug("ffmpeg filter_chain: {}", filter_chain)
             _run(base_cmd, cwd=ass_cwd)
 
-            if plan.banner_rect is None:
+            has_branding = plan.branding is not None and not plan.branding.is_empty
+            if plan.banner_rect is None and not has_branding:
                 shutil.copy(base_output, plan.output_path)
                 return plan.output_path
 
@@ -182,9 +193,10 @@ class ExportService:
                 banner_duration_sec=plan.banner_duration_sec,
                 frame_size=(plan.settings.width, plan.settings.height),
                 fps=plan.settings.fps,
+                branding=plan.branding,
             )
 
-            logger.info("Наложение анимированной плашки на клип: {}", plan.output_path.name)
+            logger.info("Наложение анимированных оверлеев (плашка/логотип/Subscribe) на клип: {}", plan.output_path.name)
             overlay_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", str(base_output),

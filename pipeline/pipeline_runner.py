@@ -35,6 +35,7 @@ from core.entities.settings import UserSettings, ViralScoreSettings
 from core.exceptions import MemoCatError
 from core.entities.subtitle import WordTiming
 from cutting.clip_selector_service import WindowScore, select_moments
+from effects.branding_overlay import BrandingOverlay, resolve_logo_path
 from effects.cover_generator import generate_cover
 from effects.collision_detector import BannerPosition, resolve_banner_position
 from export.dynamic_crop import CropSample
@@ -50,6 +51,7 @@ from video.scene_detector import SceneDetector
 from vision.smart_crop import CropWindow, SmartCropPlanner
 from vision.tracker import ObjectTracker
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WINDOW_SEC = 5.0
 SAMPLE_FPS_SCAN = 1.0     # частота сэмплирования при поиске моментов
 SAMPLE_FPS_CROP = 2.0     # частота сэмплирования при кадрировании внутри момента
@@ -115,7 +117,10 @@ class PipelineRunner:
         models_dir: Path | None = None,
         output_dir: Path | None = None,
         llm_provider: object | None = None,
+        assets_dir: Path | None = None,
     ) -> None:
+        # assets/logo/logo.png (если положили) подхватывается вместо логотипа по умолчанию
+        self._assets_dir = assets_dir or PROJECT_ROOT / "assets"
         self._models_dir = models_dir or Path("models")
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
@@ -261,6 +266,7 @@ class PipelineRunner:
             banner_text_lines=list(settings.branding.banner_text_lines),
             banner_appear_at_sec=4.0,
             banner_duration_sec=5.0,
+            branding=self._build_branding(settings),
             settings=settings.export,
             source_start_sec=moment.start_sec,
         )
@@ -295,6 +301,20 @@ class PipelineRunner:
         )
 
     # ------------------------------------------------------------------
+    def _build_branding(self, settings: UserSettings) -> BrandingOverlay | None:
+        """Логотип (assets/logo/logo.png или "Memo Cat" по умолчанию) + Subscribe."""
+        try:
+            branding = BrandingOverlay.build(
+                frame_size=(settings.export.width, settings.export.height),
+                logo_path=resolve_logo_path(self._assets_dir),
+                logo_position=settings.branding.logo_position,
+                subscribe_enabled=settings.branding.subscribe_button_enabled,
+            )
+        except Exception as exc:
+            logger.warning("Брендинг (логотип/Subscribe) недоступен: {} — экспорт без него", exc)
+            return None
+        return None if branding.is_empty else branding
+
     def _generate_content(self, transcript: str) -> ClipContent:
         """Заголовки/описание/хештеги от LLM по тексту транскрипции момента. Без
         LLM-провайдера или если LM Studio недоступна — пустой результат (клип

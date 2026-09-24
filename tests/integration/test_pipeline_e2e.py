@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from core.entities.settings import ShortsSettings, UserSettings, ViralScoreSettings
 from core.entities.subtitle import WordTiming
@@ -76,8 +77,6 @@ def test_pipeline_produces_clip_cover_and_metadata(short_video, tmp_path, monkey
     assert probe == "1080,1920"
 
     assert clip.cover_path is not None and clip.cover_path.name == f"{clip.output_path.stem}_cover.png"
-    from PIL import Image
-
     with Image.open(clip.cover_path) as cover:
         assert cover.size == (1080, 1920)
 
@@ -88,6 +87,20 @@ def test_pipeline_produces_clip_cover_and_metadata(short_video, tmp_path, monkey
     assert data["transcript"] == "привет мир"
     assert data["cover_file"] == clip.cover_path.name
     assert list(out.glob("_tmp_*")) == []
+
+    # логотип (фиолетовый) реально запечён в клип: кадр на 2 с, пиксель в центре тела логотипа
+    from effects.branding_overlay import logo_xy
+
+    frame_path = tmp_path / "frame.png"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-ss", "2", "-i", str(clip.output_path), "-frames:v", "1", str(frame_path)],
+        check=True,
+    )
+    with Image.open(frame_path) as frame:
+        logo_w, logo_h = int(1080 * 0.19), int(1080 * 0.19 * 240 / 640)
+        x, y = logo_xy("top_right", (1080, 1920), (logo_w, logo_h))
+        r, g, b = frame.convert("RGB").getpixel((x + 8, y + logo_h - 10))
+    assert (abs(r - 124) < 30, abs(g - 92) < 30, abs(b - 255) < 30) == (True, True, True)
 
 
 def test_pipeline_degrades_without_llm_and_models(short_video, tmp_path, monkeypatch):
