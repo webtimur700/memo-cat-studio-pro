@@ -18,6 +18,7 @@ faster-whisper) могут быть не скачаны, LM Studio может б
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -37,6 +38,7 @@ from cutting.clip_selector_service import WindowScore, select_moments
 from effects.collision_detector import BannerPosition, resolve_banner_position
 from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
+from llm.content_generator import ClipContent, generate_clip_content
 from scoring.viral_score_service import ScoreInputs, compute_viral_score
 from subtitles.ass_renderer import render_ass
 from subtitles.subtitle_service import group_words_into_segments
@@ -117,6 +119,7 @@ class PipelineRunner:
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
         self._transcriber = None  # создаётся на каждый process_video
+        self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
 
     def process_video(
         self,
@@ -129,6 +132,7 @@ class PipelineRunner:
                 progress(stage, data)
 
         self._transcriber = None
+        self._llm_unavailable = False
         emit("analyzing")
         source = IngestionService().ingest(video_path)
         detector = _try_load_yolo(self._models_dir)
@@ -269,72 +273,62 @@ class PipelineRunner:
             if subtitle_ass_path is not None:
                 subtitle_ass_path.unlink(missing_ok=True)
 
-        title = self._generate_title(moment)
-        return Clip(moment=moment, output_path=output_path, title=title)
+        transcript = " ".join(w.text for w in words)
+        content = self._generate_content(transcript)
+        title = content.titles[0] if content.titles else self._default_title(moment)
+        metadata_path = self._write_metadata(output_path, video_path, moment, transcript, title, content)
 
-    def _build_crop_samples(
-        self, video_path: Path, source, moment: Moment, detector: _DetectorHandle, settings: UserSettings
-    ) -> list[CropSample]:
-        planner = SmartCropPlanner(
-            source.width,
-            source.height,
-            smoothing_alpha=settings.reframe.tracking_smoothing_alpha,
-            min_subject_area_ratio=settings.reframe.min_subject_area_ratio,
-            max_zoom_factor=settings.reframe.max_zoom_factor,
+        return Clip(
+            moment=moment,
+            output_path=output_path,
+            title=title,
+            description=content.description,
+            hashtags=content.hashtags,
+            titles=content.titles,
+            transcript=transcript,
+            metadata_path=metadata_path,
         )
-        tracker = ObjectTracker()
-        samples: list[CropSample] = []
 
-        with FrameExtractor(video_path) as extractor:
-            for timestamp, frame in extractor.frames_in_range(
-                moment.start_sec, moment.end_sec, sample_fps=SAMPLE_FPS_CROP
-            ):
-                relative_t = timestamp - moment.start_sec
-                detection = None
+    # ------------------------------------------------------------------
+    def _generate_content(self, transcript: str) -> ClipContent:
+        """Заголовки/описание/хештеги от LLM по тексту транскрипции момента. Без
+        LLM-провайдера или если LM Studio недоступна — пустой результат (клип
+        получает заголовок по умолчанию), пайплайн не падает.
+        """
+        if self._llm_provider is None or self._llm_unavailable:
+            return ClipContent()
+        content = generate_clip_content(self._llm_provider, transcript)
+        if content.is_empty and content.errors:
+            self._llm_unavailable = True
+        return content
 
-                if detector.available:
-                    frame_detections = detector.detect(frame)
-                    retimed = [
-                        Detection(d.class_id, d.class_name, d.confidence, d.bbox, relative_t)
-                        for d in frame_detections
-                    ]
-                    tracker.update(retimed)
-                    primary = tracker.primary_track()
-                    if primary is not None:
-                        detection = primary.last_detection
+    @staticmethod
+    def _default_title(moment: Moment) -> str:
+        return f"Момент {moment.start_sec:.0f}s (score {moment.viral_score})"
 
-                window = planner.plan_frame(detection)
-                samples.append(
-                    CropSample(
-                        relative_t,
-                        CropWindow(window.x1, window.y1, window.x2, window.y2, window.zoom_factor, relative_t),
-                    )
-                )
-
-        if not samples:
-            # Гарантированный fallback, если не удалось прочитать ни одного
-            # кадра момента — статичный центральный кроп на весь момент.
-            center = SmartCropPlanner(source.width, source.height).plan_frame(None)
-            samples = [
-                CropSample(0.0, CropWindow(center.x1, center.y1, center.x2, center.y2, 1.0, 0.0)),
-                CropSample(
-                    moment.duration_sec,
-                    CropWindow(center.x1, center.y1, center.x2, center.y2, 1.0, moment.duration_sec),
-                ),
-            ]
-        elif samples[-1].timestamp_sec < moment.duration_sec - 1e-3:
-            # Сэмплы идут с шагом 1/SAMPLE_FPS_CROP, последний обычно не доходит до
-            # конца момента; длина клипа берётся из последнего сэмпла, поэтому
-            # без замыкающей точки клип получался бы короче момента.
-            last = samples[-1].window
-            samples.append(
-                CropSample(
-                    moment.duration_sec,
-                    CropWindow(last.x1, last.y1, last.x2, last.y2, last.zoom_factor, moment.duration_sec),
-                )
-            )
-
-        return samples
+    def _write_metadata(
+        self, output_path: Path, video_path: Path, moment: Moment, transcript: str, title: str, content: ClipContent
+    ) -> Path | None:
+        metadata_path = output_path.with_suffix(".json")
+        payload = {
+            "source_video": video_path.name,
+            "clip_file": output_path.name,
+            "start_sec": moment.start_sec,
+            "end_sec": moment.end_sec,
+            "viral_score": moment.viral_score,
+            "title": title,
+            "titles": list(content.titles),
+            "description": content.description,
+            "hashtags": list(content.hashtags),
+            "transcript": transcript,
+            "llm_errors": list(content.errors),
+        }
+        try:
+            metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.warning("Не удалось записать {}: {}", metadata_path.name, exc)
+            return None
+        return metadata_path
 
     def _get_transcriber(self, settings: UserSettings):
         """Один WhisperTranscriber на весь прогон видео: модель грузится в память
@@ -401,18 +395,3 @@ class PipelineRunner:
         resolution = resolve_banner_position(preferred_position, None, width, height, banner_width, banner_height)
         rect = resolution.final_rect
         return (int(rect.x1), int(rect.y1), int(rect.x2), int(rect.y2))
-
-    def _generate_title(self, moment: Moment) -> str:
-        if self._llm_provider is not None:
-            try:
-                from llm.prompts.titles_prompt import generate_titles
-
-                titles = generate_titles(
-                    self._llm_provider, f"Момент с viral score {moment.viral_score}", count=1
-                )
-                if titles:
-                    return titles[0]
-            except Exception as exc:
-                logger.warning("LLM-генерация заголовка не удалась: {} — использую заголовок по умолчанию", exc)
-
-        return f"Момент {moment.start_sec:.0f}s (score {moment.viral_score})"

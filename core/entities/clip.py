@@ -15,3 +15,7 @@ class Clip:
     title: str = ""
     description: str = ""
     hashtags: tuple[str, ...] = field(default_factory=tuple)
+    titles: tuple[str, ...] = field(default_factory=tuple)
+    transcript: str = ""
+    metadata_path: Path | None = None
+    cover_path: Path | None = None

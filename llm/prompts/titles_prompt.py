@@ -50,7 +50,9 @@ def parse_titles(raw_response: str, expected_count: int = 10) -> list[str]:
     return titles[:expected_count]
 
 
-def generate_titles(provider: LLMProvider, clip_description: str, count: int = 10) -> list[str]:
+def generate_titles(
+    provider: LLMProvider, clip_description: str, count: int = 10, max_tokens: int = 4096
+) -> list[str]:
     prompt = build_titles_prompt(clip_description)
-    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=400)
+    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=max_tokens)
     return parse_titles(raw_response, expected_count=count)

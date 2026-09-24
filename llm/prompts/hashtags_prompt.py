@@ -35,7 +35,9 @@ def parse_hashtags(raw_response: str, max_count: int = 30) -> list[str]:
     return unique[:max_count]
 
 
-def generate_hashtags(provider: LLMProvider, clip_description: str, max_count: int = 30) -> list[str]:
+def generate_hashtags(
+    provider: LLMProvider, clip_description: str, max_count: int = 30, max_tokens: int = 3072
+) -> list[str]:
     prompt = build_hashtags_prompt(clip_description, max_count)
-    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=300)
+    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=max_tokens)
     return parse_hashtags(raw_response, max_count=max_count)

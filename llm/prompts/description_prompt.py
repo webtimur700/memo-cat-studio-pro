@@ -20,9 +20,9 @@ def build_description_prompt(clip_description: str, max_length_chars: int = 500)
 
 
 def generate_description(
-    provider: LLMProvider, clip_description: str, max_length_chars: int = 500
+    provider: LLMProvider, clip_description: str, max_length_chars: int = 500, max_tokens: int = 3072
 ) -> str:
     prompt = build_description_prompt(clip_description, max_length_chars)
-    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=300)
+    raw_response = provider.complete(SYSTEM_PROMPT, prompt, max_tokens=max_tokens)
     description = raw_response.strip()
     return description[:max_length_chars]
