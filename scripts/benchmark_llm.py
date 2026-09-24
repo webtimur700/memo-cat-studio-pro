@@ -8,8 +8,8 @@
 docs/llm_benchmark_inputs/inputs.json в разных режимах рассуждения. Результаты
 дописываются в JSON по мере готовности (можно прервать и продолжить).
 
-Режимы: none — reasoning_effort=none (рассуждения выключены), low — ограничены,
-default — параметр не передаётся (как настроена модель).
+Режимы: none — reasoning_effort=none (рассуждения выключены), none_img — то же + кадр
+момента (vision), low — ограничены, default — параметр не передаётся (как настроена модель).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from llm.prompts.titles_prompt import generate_titles  # noqa: E402
 BASE_URL = "http://localhost:1234/v1"
 INPUTS = ROOT / "docs" / "llm_benchmark_inputs" / "inputs.json"
 CONTEXT_LENGTH = 16384
-REASONING_MODE_INPUT_IDS = {"m990", "m60"}   # в долгих режимах (low, default) — только 2 входа
+REASONING_MODE_INPUT_IDS = {"m990"}   # в долгих режимах (low, default) — только 1 вход (клип занимает минуты)
 
 
 def meminfo_available_mib() -> float:
@@ -95,15 +95,15 @@ def analyze(titles: list[str], description: str, hashtags: list[str], raw_titles
     }
 
 
-def run_case(provider: LMStudioProvider, text: str) -> dict:
+def run_case(provider: LMStudioProvider, text: str, image: bytes | None = None) -> dict:
     """Один клип: три запроса как в production. Возвращает тайминги, токены, ответы."""
     record: dict = {"steps": {}}
     total_start = time.time()
     outputs: dict = {}
     for name, fn in (
-        ("titles", lambda: generate_titles(provider, text, count=10)),
-        ("description", lambda: generate_description(provider, text)),
-        ("hashtags", lambda: generate_hashtags(provider, text, max_count=30)),
+        ("titles", lambda: generate_titles(provider, text, count=10, image_jpeg=image)),
+        ("description", lambda: generate_description(provider, text, image_jpeg=image)),
+        ("hashtags", lambda: generate_hashtags(provider, text, max_count=30, image_jpeg=image)),
     ):
         t0 = time.time()
         try:
@@ -131,11 +131,13 @@ def main() -> None:
     parser.add_argument("--models", nargs="*")
     parser.add_argument("--modes", nargs="*", default=["none", "low", "default"])
     parser.add_argument("--out", default=str(ROOT / "docs" / "llm_benchmark_raw.json"))
+    parser.add_argument("--inputs", default=str(INPUTS), help="JSON со входами (transcript + image)")
     args = parser.parse_args()
 
     out_path = Path(args.out)
     results = json.loads(out_path.read_text()) if out_path.exists() else {}
-    inputs = json.loads(INPUTS.read_text())
+    inputs_path = Path(args.inputs)
+    inputs = json.loads(inputs_path.read_text())
 
     models = [m for m in api.list_models(BASE_URL) if m.is_chat_model]
     if args.models:
@@ -166,17 +168,19 @@ def main() -> None:
         with MemorySampler() as mem_run:
             for mode in args.modes:
                 for item in inputs:
-                    if mode != "none" and item["id"] not in REASONING_MODE_INPUT_IDS:
+                    if mode in ("low", "default") and item["id"] not in REASONING_MODE_INPUT_IDS:
                         continue
                     case_key = f"{mode}|{item['id']}"
                     if case_key in entry["cases"]:
                         continue
-                    effort = None if mode == "default" else mode
+                    # none_img — рассуждения выключены + кадр момента (vision)
+                    effort = None if mode == "default" else ("none" if mode == "none_img" else mode)
+                    image = (inputs_path.parent / item["image"]).read_bytes() if mode == "none_img" else None
                     provider = LMStudioProvider(
                         LMStudioConfig(base_url=BASE_URL, timeout_sec=900, model_override=model.key, reasoning_effort=effort)
                     )
                     text = build_clip_description(item["transcript"])
-                    result = run_case(provider, text)
+                    result = run_case(provider, text, image)
                     entry["cases"][case_key] = result
                     m = result["metrics"]
                     print(

@@ -1,0 +1,532 @@
+{
+  "small": {
+    "windows": {
+      "150": {
+        "sec": 14.6,
+        "text": "Слава Судьба, это хорошо Не тратит меня",
+        "n_words": 7,
+        "avg_logprob": -2.468,
+        "wer_vs_reference": 1.0
+      },
+      "210": {
+        "sec": 9.9,
+        "text": "Жанин, уй -яй -яй -яй -яй -яй. Я гоню за буфу. Ааааа. А, гябра. Гябра!",
+        "n_words": 15,
+        "avg_logprob": -0.894,
+        "wer_vs_reference": 1.0
+      },
+      "540": {
+        "sec": 1.4,
+        "text": "ты что, встал? ты что, встал? ты что, встал?",
+        "n_words": 9,
+        "avg_logprob": -0.78,
+        "wer_vs_reference": 1.0
+      },
+      "630": {
+        "sec": 1.5,
+        "text": "А? Ой! Хе -хе -хе -хе -хе -хе -хе!",
+        "n_words": 9,
+        "avg_logprob": -0.624,
+        "wer_vs_reference": 3.0
+      },
+      "870": {
+        "sec": 1.5,
+        "text": "Вот это, ай, вот это что -то, ай, ай, ай, ай, ай, ай, ай!",
+        "n_words": 14,
+        "avg_logprob": -0.816,
+        "wer_vs_reference": 1.0
+      },
+      "990": {
+        "sec": 13.8,
+        "text": "Why are you wasting your time? This is just one -sided love! It's okay. Only you know my feelings!",
+        "n_words": 19,
+        "avg_logprob": -2.151,
+        "wer_vs_reference": 1.0
+      },
+      "1170": {
+        "sec": 13.5,
+        "text": "О, ой, ой, ой, ой, ой, ой. Квасяка то, то, то. Чё, Кос.",
+        "n_words": 13,
+        "avg_logprob": -1.284,
+        "wer_vs_reference": 1.3
+      },
+      "1860": {
+        "sec": 2.5,
+        "text": "Покинетаде, уни -ки -ки -каде Покинетаде, уни -ки -ки -каде",
+        "n_words": 10,
+        "avg_logprob": -0.582,
+        "wer_vs_reference": 5.0
+      }
+    },
+    "load_sec": 1.6
+  },
+  "medium": {
+    "windows": {
+      "150": {
+        "sec": 5.5,
+        "text": "СМЕХ",
+        "n_words": 1,
+        "avg_logprob": -0.876,
+        "wer_vs_reference": 1.0
+      },
+      "210": {
+        "sec": 71.0,
+        "text": "Ача нинь ой ай ай Он кинёт equations Аааа devepowered джп ААЁ cause you",
+        "n_words": 14,
+        "avg_logprob": -3.787,
+        "wer_vs_reference": 1.0
+      },
+      "540": {
+        "sec": 6.4,
+        "text": "Ты в шоке? Ты в шоке? Ты в шоке?",
+        "n_words": 9,
+        "avg_logprob": -0.645,
+        "wer_vs_reference": 1.0
+      },
+      "630": {
+        "sec": 3.3,
+        "text": "А? Ой! СМЕХ",
+        "n_words": 3,
+        "avg_logprob": -0.789,
+        "wer_vs_reference": 1.0
+      },
+      "870": {
+        "sec": 3.7,
+        "text": "Вот это! Что это такое? Что это такое?",
+        "n_words": 8,
+        "avg_logprob": -0.965,
+        "wer_vs_reference": 1.0
+      },
+      "990": {
+        "sec": 41.9,
+        "text": "‏‏‏ ‏‏‏",
+        "n_words": 2,
+        "avg_logprob": -1.695,
+        "wer_vs_reference": 1.0
+      },
+      "1170": {
+        "sec": 25.0,
+        "text": "Ай -йоу! Гуа шага -то! Чё кушай!",
+        "n_words": 7,
+        "avg_logprob": -1.049,
+        "wer_vs_reference": 1.0
+      },
+      "1860": {
+        "sec": 19.5,
+        "text": "По -дидитаджу, по -дидидаджу По -дидидаджу, по -дидидаджу",
+        "n_words": 8,
+        "avg_logprob": -0.906,
+        "wer_vs_reference": 4.0
+      }
+    },
+    "load_sec": 2.2
+  },
+  "deepdml/faster-whisper-large-v3-turbo-ct2": {
+    "windows": {
+      "150": {
+        "sec": 4.2,
+        "text": "Субтитры сделал DimaTorzok",
+        "n_words": 3,
+        "avg_logprob": -0.515,
+        "wer_vs_reference": 1.0
+      },
+      "210": {
+        "sec": 16.9,
+        "text": "Джонни неней ай ай ай ай ай ай ай ай ай а θ Bunny Акиya б»",
+        "n_words": 16,
+        "avg_logprob": -2.245,
+        "wer_vs_reference": 1.0
+      },
+      "540": {
+        "sec": 4.3,
+        "text": "Субтитры сделал DimaTorzok",
+        "n_words": 3,
+        "avg_logprob": -0.513,
+        "wer_vs_reference": 1.0
+      },
+      "630": {
+        "sec": 4.2,
+        "text": "а",
+        "n_words": 1,
+        "avg_logprob": -0.844,
+        "wer_vs_reference": 1.0
+      },
+      "870": {
+        "sec": 6.7,
+        "text": "Это я! Я не знаю, это я. Я не знаю, что это. Я не знаю, что это.",
+        "n_words": 17,
+        "avg_logprob": -1.537,
+        "wer_vs_reference": 1.0
+      },
+      "990": {
+        "sec": 5.8,
+        "text": ".",
+        "n_words": 1,
+        "avg_logprob": -1.701,
+        "wer_vs_reference": 1.0
+      },
+      "1170": {
+        "sec": 4.2,
+        "text": "Игорь Негода.",
+        "n_words": 2,
+        "avg_logprob": -0.926,
+        "wer_vs_reference": 1.0
+      },
+      "1860": {
+        "sec": 4.2,
+        "text": "Субтитры сделал DimaTorzok",
+        "n_words": 3,
+        "avg_logprob": -0.638,
+        "wer_vs_reference": 1.5
+      }
+    },
+    "load_sec": 2.5
+  },
+  "small@auto": {
+    "windows": {
+      "150": {
+        "detected_language": "zh",
+        "sec": 1.7,
+        "text": "笑 死 人 是 更 正 好 你 嘴 嘴 嘴 嘴 嘴 嘴",
+        "n_words": 14,
+        "avg_logprob": -0.875,
+        "wer_vs_reference": 0.29
+      },
+      "210": {
+        "detected_language": "zh",
+        "sec": 18.7,
+        "text": "John ny ny aya 我 给 你 做 个 复 议 加 班",
+        "n_words": 13,
+        "avg_logprob": -1.818,
+        "wer_vs_reference": 0.76
+      },
+      "540": {
+        "detected_language": "zh",
+        "sec": 1.3,
+        "text": "你 是不是 在 滚 头 你 是不是 在 滚 头 开 了",
+        "n_words": 12,
+        "avg_logprob": -0.532,
+        "wer_vs_reference": 0.12
+      },
+      "630": {
+        "detected_language": "en",
+        "sec": 1.4,
+        "text": "Bye. Bye. Bye. Bye. Bye.",
+        "n_words": 5,
+        "avg_logprob": -0.736,
+        "wer_vs_reference": 1.67
+      },
+      "870": {
+        "detected_language": "zh",
+        "sec": 1.5,
+        "text": "你就 再 一个 哎 呦 我 真 傻 的 让 我 给 按 点 了 哎 呦 我的 妈",
+        "n_words": 19,
+        "avg_logprob": -0.724,
+        "wer_vs_reference": 0.47
+      },
+      "990": {
+        "detected_language": "zh",
+        "sec": 1.6,
+        "text": "對 待 成 名, 一 片 水 城 之 境 我 怎麼 懷 疑 它 是 光 的 這是 一 廂 新 的 不行 只有 你 對 我在",
+        "n_words": 28,
+        "avg_logprob": -0.559,
+        "wer_vs_reference": 0.48
+      },
+      "1170": {
+        "detected_language": "zh",
+        "sec": 1.3,
+        "text": "哎 呦 刮 下 个 刀 你 抽 空 水 抽",
+        "n_words": 11,
+        "avg_logprob": -0.755,
+        "wer_vs_reference": 0.4
+      },
+      "1860": {
+        "detected_language": "en",
+        "sec": 6.7,
+        "text": "Po -Ki -Ni -Ka -Ti -Po -Ni -Ki -Ni -Ka -Ti Po -Ki -Ni -Ka -Ti -Po -Ni -Ki -Ni -Ka -Ti",
+        "n_words": 22,
+        "avg_logprob": -0.395,
+        "wer_vs_reference": 11.0
+      }
+    },
+    "language": "auto",
+    "cpu_threads": 0,
+    "load_sec": 1.6
+  },
+  "small@t8": {
+    "windows": {
+      "150": {
+        "detected_language": "ru",
+        "sec": 12.2,
+        "text": "СМЕЕТСЯ СМЕЕТСЯ",
+        "n_words": 2,
+        "avg_logprob": -1.134,
+        "wer_vs_reference": 1.0
+      },
+      "210": {
+        "detected_language": "ru",
+        "sec": 13.0,
+        "text": "Я не знаю, я не знаю Я не знаю, я не знаю Что вы делаете?",
+        "n_words": 15,
+        "avg_logprob": -1.626,
+        "wer_vs_reference": 1.0
+      },
+      "540": {
+        "detected_language": "ru",
+        "sec": 1.2,
+        "text": "ты что, встал? ты что, встал? ты что, встал?",
+        "n_words": 9,
+        "avg_logprob": -0.78,
+        "wer_vs_reference": 1.0
+      },
+      "630": {
+        "detected_language": "ru",
+        "sec": 1.3,
+        "text": "А? Ой! Хе -хе -хе -хе -хе -хе -хе!",
+        "n_words": 9,
+        "avg_logprob": -0.624,
+        "wer_vs_reference": 3.0
+      },
+      "870": {
+        "detected_language": "ru",
+        "sec": 1.3,
+        "text": "Вот это, ай, вот это что -то, ай, ай, ай, ай, ай, ай, ай!",
+        "n_words": 14,
+        "avg_logprob": -0.816,
+        "wer_vs_reference": 1.0
+      },
+      "990": {
+        "detected_language": "ru",
+        "sec": 12.7,
+        "text": "Он ещё вернулся в чуж Button Я настоянул Я пережю, потому что он же Я рад, что ты onde Он сидит",
+        "n_words": 21,
+        "avg_logprob": -3.277,
+        "wer_vs_reference": 1.0
+      },
+      "1170": {
+        "detected_language": "ru",
+        "sec": 11.9,
+        "text": "Ой, ой, ой! Я не могу, я не могу! Отлично!",
+        "n_words": 10,
+        "avg_logprob": -1.566,
+        "wer_vs_reference": 1.0
+      },
+      "1860": {
+        "detected_language": "ru",
+        "sec": 10.7,
+        "text": "одинить",
+        "n_words": 1,
+        "avg_logprob": -3.414,
+        "wer_vs_reference": 1.0
+      }
+    },
+    "language": "ru",
+    "cpu_threads": 8,
+    "load_sec": 0.7
+  },
+  "medium@auto": {
+    "windows": {
+      "150": {
+        "detected_language": "zh",
+        "sec": 3.8,
+        "text": "哈哈 哈哈 笑 死 人 这个 人 真 好 你 嘴 嘴 嘴 嘴 嘴",
+        "n_words": 15,
+        "avg_logprob": -0.69,
+        "wer_vs_reference": 0.5
+      },
+      "210": {
+        "detected_language": "ja",
+        "sec": 40.7,
+        "text": "お 腹 が い っぱ い いい ね お 腹 が い っぱ い お 腹 が い っぱ い",
+        "n_words": 20,
+        "avg_logprob": -1.404,
+        "wer_vs_reference": 1.41
+      },
+      "540": {
+        "detected_language": "zh",
+        "sec": 3.7,
+        "text": "你 是不是 在 棍 頭? 你 是不是 在 棍 頭? 開 啦",
+        "n_words": 12,
+        "avg_logprob": -0.521,
+        "wer_vs_reference": 0.29
+      },
+      "630": {
+        "detected_language": "en",
+        "sec": 3.5,
+        "text": "What? Hahahaha Hahahaha",
+        "n_words": 3,
+        "avg_logprob": -0.716,
+        "wer_vs_reference": 1.0
+      },
+      "870": {
+        "detected_language": "zh",
+        "sec": 4.1,
+        "text": "你有 这个 哎 呦 这 啥 东 西 让 人 给 摁 那 了 哎 呦 我的 妈",
+        "n_words": 18,
+        "avg_logprob": -0.546,
+        "wer_vs_reference": 0.26
+      },
+      "990": {
+        "detected_language": "zh",
+        "sec": 3.4,
+        "text": "我的 妈 怀 疑 他是 装 的",
+        "n_words": 7,
+        "avg_logprob": -0.533,
+        "wer_vs_reference": 0.82
+      },
+      "1170": {
+        "detected_language": "zh",
+        "sec": 3.8,
+        "text": "哎 呦 刮 下 个 刀 啊 你 抽 空 水 抽 空 水",
+        "n_words": 14,
+        "avg_logprob": -0.716,
+        "wer_vs_reference": 0.7
+      },
+      "1860": {
+        "detected_language": "en",
+        "sec": 3.1,
+        "text": "Oh",
+        "n_words": 1,
+        "avg_logprob": -0.659,
+        "wer_vs_reference": 0.5
+      }
+    },
+    "language": "auto",
+    "cpu_threads": 0,
+    "load_sec": 2.1
+  },
+  "deepdml/faster-whisper-large-v3-turbo-ct2@auto": {
+    "windows": {
+      "150": {
+        "detected_language": "zh",
+        "sec": 4.2,
+        "text": "笑 死 了 这个 正 好 你 死 了 你 死 了 你 死 了",
+        "n_words": 15,
+        "avg_logprob": -0.722,
+        "wer_vs_reference": 0.71
+      },
+      "210": {
+        "detected_language": "zh",
+        "sec": 4.5,
+        "text": "掌 令 你 以 为 哎 呀 哎 呀 哎 呀 我 给 你 总 扶 你 啊 啊 啊 啊 啊 啊 这样 吧 这样 哎 呀 哈哈哈",
+        "n_words": 29,
+        "avg_logprob": -0.805,
+        "wer_vs_reference": 1.47
+      },
+      "540": {
+        "detected_language": "zh",
+        "sec": 4.2,
+        "text": "你 是不是 在 棍 頭? 你 是不是 在 棍 頭? 開 來 啦",
+        "n_words": 13,
+        "avg_logprob": -0.902,
+        "wer_vs_reference": 0.29
+      },
+      "630": {
+        "detected_language": "ja",
+        "sec": 4.1,
+        "text": "ん おい",
+        "n_words": 2,
+        "avg_logprob": -0.805,
+        "wer_vs_reference": 1.0
+      },
+      "870": {
+        "detected_language": "zh",
+        "sec": 4.3,
+        "text": "就 这个 哎 呦 我 这 傻 子 让 人 给 摁 那 了 哎 呦 我的 妈",
+        "n_words": 18,
+        "avg_logprob": -0.324,
+        "wer_vs_reference": 0.05
+      },
+      "990": {
+        "detected_language": "zh",
+        "sec": 4.5,
+        "text": "对 待 臣 民 一 片 失 诚 之 境 我的 妈 怀 疑 都是 装 的 这 只是 异 乡 情 人 百 姓 只有 你 对 我 做",
+        "n_words": 30,
+        "avg_logprob": -0.536,
+        "wer_vs_reference": 0.3
+      },
+      "1170": {
+        "detected_language": "zh",
+        "sec": 4.3,
+        "text": "哎 呦 刮 下 个 道 理 抽 空 水 哇 哇 哇 哇 哇 哇 哇 哇",
+        "n_words": 18,
+        "avg_logprob": -0.669,
+        "wer_vs_reference": 1.1
+      },
+      "1860": {
+        "detected_language": "en",
+        "sec": 4.0,
+        "text": "Oh",
+        "n_words": 1,
+        "avg_logprob": -0.98,
+        "wer_vs_reference": 0.5
+      }
+    },
+    "language": "auto",
+    "cpu_threads": 0,
+    "load_sec": 2.5
+  },
+  "large-v3@auto": {
+    "windows": {
+      "150": {
+        "detected_language": "zh",
+        "sec": 6.3,
+        "text": "笑 死 人 这 可 真 好 你 嘴 嘴 嘴 你 嘴 嘴",
+        "n_words": 14,
+        "avg_logprob": -0.585
+      },
+      "210": {
+        "detected_language": "zh",
+        "sec": 24.5,
+        "text": "找 你 女 友 我 給 你 做 婦 女 啊 啊 啊 啊 去 那 邊",
+        "n_words": 17,
+        "avg_logprob": -0.84
+      },
+      "540": {
+        "detected_language": "zh",
+        "sec": 6.1,
+        "text": "你 是不是 在 滚 头 你 是不是 在 滚 头 拍 了 啊",
+        "n_words": 13,
+        "avg_logprob": -0.418
+      },
+      "630": {
+        "detected_language": "ko",
+        "sec": 26.1,
+        "text": "어? 어이!",
+        "n_words": 2,
+        "avg_logprob": -1.1
+      },
+      "870": {
+        "detected_language": "zh",
+        "sec": 6.5,
+        "text": "就 这个 哎 呦 这 傻 子 让 人 给 摁 那 了 哎 呦 我的 妈",
+        "n_words": 17,
+        "avg_logprob": -0.289
+      },
+      "990": {
+        "detected_language": "zh",
+        "sec": 7.6,
+        "text": "對 待 臣 民 一 片 誓 誠 之 勁 我 懷 疑 他是 裝 的 這 只是 一 廂 情 願 百 姓 只有 你 對 我 最 好",
+        "n_words": 30,
+        "avg_logprob": -0.578
+      },
+      "1170": {
+        "detected_language": "zh",
+        "sec": 6.7,
+        "text": "哎 呦 刮 下 个 头 来 抽 口 水",
+        "n_words": 10,
+        "avg_logprob": -0.674
+      },
+      "1860": {
+        "detected_language": "en",
+        "sec": 16.3,
+        "text": "Oh, yeah.",
+        "n_words": 2,
+        "avg_logprob": -1.059
+      }
+    },
+    "language": "auto",
+    "cpu_threads": 0,
+    "load_sec": 4.2
+  }
+}

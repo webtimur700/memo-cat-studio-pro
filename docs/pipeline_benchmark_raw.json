@@ -1,0 +1,77 @@
+{
+  "google/gemma-4-26b-a4b": {
+    "video": "chunkB.mp4",
+    "clips": 3,
+    "clips_with_llm_titles": 3,
+    "total_sec": 322,
+    "sec_per_clip": 107,
+    "stage_start_sec": {
+      "analyzing": 0,
+      "scoring": 14,
+      "cutting": 37,
+      "reframing": 54,
+      "done": 322
+    },
+    "vision_used": true,
+    "model": "google/gemma-4-26b-a4b",
+    "peak_available_drop_mib": 13854,
+    "min_available_mib": 12510,
+    "peak_gtt_delta_mib": 8200,
+    "peak_rss_mib": {
+      "python": 1689,
+      "ffmpeg": 2009,
+      "lm_studio": 15099
+    },
+    "peak_swap_used_mib": 3721
+  },
+  "qwen/qwen3.6-35b-a3b": {
+    "video": "chunkB.mp4",
+    "clips": 3,
+    "clips_with_llm_titles": 3,
+    "total_sec": 310,
+    "sec_per_clip": 103,
+    "stage_start_sec": {
+      "analyzing": 0,
+      "scoring": 13,
+      "cutting": 37,
+      "reframing": 45,
+      "done": 310
+    },
+    "vision_used": false,
+    "model": "qwen/qwen3.6-35b-a3b",
+    "peak_available_drop_mib": 12931,
+    "min_available_mib": 12514,
+    "peak_gtt_delta_mib": 8374,
+    "peak_rss_mib": {
+      "python": 1450,
+      "ffmpeg": 2018,
+      "lm_studio": 14732
+    },
+    "peak_swap_used_mib": 3639
+  },
+  "qwen/qwen3.8-27b": {
+    "video": "chunkB.mp4",
+    "clips": 3,
+    "clips_with_llm_titles": 3,
+    "total_sec": 682,
+    "sec_per_clip": 227,
+    "stage_start_sec": {
+      "analyzing": 0,
+      "scoring": 14,
+      "cutting": 38,
+      "reframing": 51,
+      "done": 682
+    },
+    "vision_used": true,
+    "model": "qwen/qwen3.8-27b",
+    "peak_available_drop_mib": 14640,
+    "min_available_mib": 10468,
+    "peak_gtt_delta_mib": 9154,
+    "peak_rss_mib": {
+      "python": 1435,
+      "ffmpeg": 2002,
+      "lm_studio": 14874
+    },
+    "peak_swap_used_mib": 3683
+  }
+}

@@ -648,19 +648,100 @@
           "hashtags_count": 30,
           "hashtags_ok": true
         }
+      },
+      "default|m990": {
+        "steps": {
+          "titles": {
+            "sec": 84.9,
+            "completion_tokens": 1003,
+            "reasoning_tokens": 855,
+            "error": null
+          },
+          "description": {
+            "sec": 44.7,
+            "completion_tokens": 619,
+            "reasoning_tokens": 556,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 54.8,
+            "completion_tokens": 764,
+            "reasoning_tokens": 668,
+            "error": null
+          }
+        },
+        "total_sec": 184.5,
+        "outputs": {
+          "titles": [
+            "Они ВООБЩЕ не спали! 😱",
+            "Как это вообще ВОЗМОЖНО? 🤯",
+            "Эти животные СЛОМАЛИСЬ... 😂",
+            "Что здесь ПРОИСХОДИТ? 🤔",
+            "Они просто НЕ МОГУТ остановиться!",
+            "Досмотри до конца, чтобы понять... 🐾",
+            "Полный ХАОС с питомцами! 🔥",
+            "Почему они ТАК себя ведут? 😂",
+            "Режим «НИКАКОГО СНА» включен! 🚫💤",
+            "Это было НЕОЖИДАННО! 😱"
+          ],
+          "description": "Этот забавный момент с животными точно поднимет вам настроение. Посмотрите на невероятную и смешную реакцию питомцев, которая заставит вас улыбнуться. Лучшая подборка приколов с милыми животными в одном коротком видео.",
+          "hashtags": [
+            "#animals",
+            "#pets",
+            "#funny",
+            "#shorts",
+            "#youtubeshorts",
+            "#funnyanimals",
+            "#animalmemes",
+            "#comedy",
+            "#cute",
+            "#trending",
+            "#viral",
+            "#petfails",
+            "#funnyvideos",
+            "#humor",
+            "#cutepets",
+            "#animalsdoingthings",
+            "#laugh",
+            "#memes",
+            "#funnycats",
+            "#funnydogs",
+            "#petlovers",
+            "#crazypets",
+            "#shortsfeed",
+            "#funnymoments",
+            "#petslife",
+            "#dailyfunny",
+            "#animalsoftiktok",
+            "#paws",
+            "#comedygold",
+            "#cuteanimals"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 36,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 218,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
       }
     },
     "load": {
-      "load_sec": 16.8,
+      "load_sec": 60.1,
       "context_length": 16384,
-      "available_drop_mib": 10399,
+      "available_drop_mib": 10203,
       "gtt_delta_mib": 8230,
       "size_gib": 16.8
     },
     "run_memory": {
-      "peak_available_drop_mib": 13669,
+      "peak_available_drop_mib": 10689,
       "peak_gtt_mib": 9459,
-      "peak_vram_mib": 486
+      "peak_vram_mib": 492
     }
   },
   "qwen/qwen3.8-27b": {
@@ -906,19 +987,750 @@
           "hashtags_count": 30,
           "hashtags_ok": true
         }
+      },
+      "none|m60": {
+        "steps": {
+          "titles": {
+            "sec": 59.0,
+            "completion_tokens": 136,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 27.1,
+            "completion_tokens": 69,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 31.3,
+            "completion_tokens": 83,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 117.3,
+        "outputs": {
+          "titles": [
+            "Кошка думала, что хитрая 😂",
+            "Этого не переживет никто 🐶",
+            "Пёс устроил скандал без причины",
+            "Они думали, что это шутка 😅",
+            "Животное: я в этом не участвую",
+            "Самый смешной провал года 🐱",
+            "Он не понял, что происходит",
+            "Хозяин обомлел от такой наглости",
+            "Мозг животного выдал 404 🤯",
+            "Они это делают намеренно?"
+          ],
+          "description": "Забавный момент с животными, который вызовет улыбку у всех зрителей. Короткое видео без слов, где природа показывает свое самое смешное лицо. Идеально для быстрого просмотра и поднятия настроения. Смотрите до конца, чтобы не пропустить этот милый и неожиданный эпизод из жизни питомцев.",
+          "hashtags": [
+            "#animals",
+            "#cuteanimals",
+            "#funnyanimals",
+            "#shorts",
+            "#youtube",
+            "#viral",
+            "#trending",
+            "#fyp",
+            "#animallovers",
+            "#petlover",
+            "#wildlife",
+            "#nature",
+            "#animalsvideo",
+            "#funny",
+            "#comedy",
+            "#laugh",
+            "#joy",
+            "#happy",
+            "#pets",
+            "#cat",
+            "#dog",
+            "#kitten",
+            "#puppy",
+            "#wild",
+            "#safari",
+            "#zoo",
+            "#farm",
+            "#cute",
+            "#adorable",
+            "#wholesome"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 32,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 286,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "low|m990": {
+        "steps": {
+          "titles": {
+            "sec": 161.2,
+            "completion_tokens": 564,
+            "reasoning_tokens": 401,
+            "error": null
+          },
+          "description": {
+            "sec": 108.8,
+            "completion_tokens": 260,
+            "reasoning_tokens": 204,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 137.5,
+            "completion_tokens": 399,
+            "reasoning_tokens": 279,
+            "error": null
+          }
+        },
+        "total_sec": 407.5,
+        "outputs": {
+          "titles": [
+            "Они НЕ спали и это ПЛАЧ 😭",
+            "Вот они и не спали... а чё?",
+            "Животные не спали. Я не сплю. Никто не спит",
+            "Не спали. Не бежали. А ЧЁ?",
+            "Они не спали и я не сплю 🫠",
+            "Животные: мы не спим. Хозяин: аааа",
+            "Вот что бывает когда они не спят",
+            "Они не спали. Никто не виноват. Все виноваты",
+            "Не спали. И это было КРАЙНЕ",
+            "Они не спали... и я уже не сплю"
+          ],
+          "description": "Смешной момент с животными, которые решили, что спать — не их время. Реакция владельцев на их поведение — чистый юмор. Забавное видео про то, как питомцы удивляют своих хозяев каждый день.",
+          "hashtags": [
+            "#shorts",
+            "#animals",
+            "#pets",
+            "#funny",
+            "#funnyanimals",
+            "#cute",
+            "#viral",
+            "#fyp",
+            "#animalfails",
+            "#petfails",
+            "#funnypets",
+            "#смешныеживотные",
+            "#животные",
+            "#смешно",
+            "#милыеживотные",
+            "#petslife",
+            "#animallovers",
+            "#funnyshorts",
+            "#viralshorts",
+            "#petsoftiktok",
+            "#animalsoftiktok",
+            "#funnyvideo",
+            "#смешное",
+            "#юмор",
+            "#animallife",
+            "#petlife",
+            "#funnymoments",
+            "#animalcomedy",
+            "#смешныеpets",
+            "#petsfun"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 44,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 188,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "default|m990": {
+        "steps": {
+          "titles": {
+            "sec": 263.2,
+            "completion_tokens": 994,
+            "reasoning_tokens": 847,
+            "error": null
+          },
+          "description": {
+            "sec": 124.9,
+            "completion_tokens": 489,
+            "reasoning_tokens": 431,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 189.9,
+            "completion_tokens": 720,
+            "reasoning_tokens": 613,
+            "error": null
+          }
+        },
+        "total_sec": 578.0,
+        "outputs": {
+          "titles": [
+            "Они так решили и ВСЁ 💀",
+            "Это не бежим? А ЧЕ? 😂",
+            "Животные опять не спали? 🐾",
+            "Только ты? И это смешно 😭",
+            "Они не спаныли и я в шоке",
+            "А че? Только ты? 😳",
+            "Не бежим? Но бегут же 💨",
+            "Они решили, что я не знаю",
+            "Вот они и не спныли 🤯",
+            "Этот момент объяснил всё"
+          ],
+          "description": "Забавный момент с животными, который не оставит равнодушным. Смешные домашние питомцы показывают, что даже обычный день может превратиться в комедию. Короткое видео про животных, смешные ситуации и добрый смех.",
+          "hashtags": [
+            "#shorts",
+            "#animals",
+            "#funny",
+            "#cute",
+            "#pets",
+            "#cats",
+            "#dogs",
+            "#catsoftiktok",
+            "#catfails",
+            "#animalshorts",
+            "#funnycats",
+            "#funnyanimals",
+            "#animalfails",
+            "#petsofinstagram",
+            "#catlover",
+            "#doglover",
+            "#catlife",
+            "#doglife",
+            "#funnymoments",
+            "#animalsoftiktok",
+            "#funnypets",
+            "#catvideos",
+            "#dogvideos",
+            "#shortsfeed",
+            "#explore",
+            "#viral",
+            "#trending",
+            "#animalcomedy",
+            "#petcomedy",
+            "#funnyshorts"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 26,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 210,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
       }
     },
     "load": {
-      "load_sec": 54.8,
+      "load_sec": 27.4,
       "context_length": 16384,
-      "available_drop_mib": 10936,
+      "available_drop_mib": 11333,
       "gtt_delta_mib": 9303,
       "size_gib": 16.5
     },
     "run_memory": {
-      "peak_available_drop_mib": 13571,
-      "peak_gtt_mib": 10543,
-      "peak_vram_mib": 501
+      "peak_available_drop_mib": 13152,
+      "peak_gtt_mib": 10544,
+      "peak_vram_mib": 500
+    }
+  },
+  "qwen/qwen3.6-35b-a3b": {
+    "cases": {
+      "none|m150": {
+        "steps": {
+          "titles": {
+            "sec": 54.3,
+            "completion_tokens": 206,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 9.0,
+            "completion_tokens": 53,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 12.0,
+            "completion_tokens": 95,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 75.3,
+        "outputs": {
+          "titles": [
+            "ЭТОТ РЕДАКТОР В БЕШЕНСТВЕ! 😂",
+            "ЖИВОТНЫЕ ПРОТИВ РЕДАКТОРА: ПОБЕДА?",
+            "ОН НЕ ПОНЯЛ, ЧТО ДЕЛАЕТ! 🤣",
+            "САМЫЙ БЕШЕНЫЙ МОНТАЖ В ИСТОРИИ",
+            "КОГДА ЖИВОТНЫЕ УПРАВЛЯЮТ ВИДЕО",
+            "ОШИБКА РЕДАКТОРА = ХИТ YOUTUBE 🔥",
+            "ОН В ШОКЕ ОТ ТОГО, ЧТО ВИДИТ",
+            "ЭТИ ЗВЕРИ ЛОМАЮТ ВСЮ СИСТЕМУ!",
+            "РЕДАКТОР ЗАБЫЛ ВЫКЛЮЧИТЬ МИКРОФОН",
+            "НЕВЕРОЯТНАЯ РЕАКЦИЯ НА МОНТАЖ 😱"
+          ],
+          "description": "Забавный момент с животными, который заставит вас улыбнуться. Смешное видео с питомцами, полное юмора и веселья. Отличный способ поднять настроение и отдохнуть. Смотрите до конца, чтобы увидеть самый интересный фрагмент!",
+          "hashtags": [
+            "#animals",
+            "#cute",
+            "#funny",
+            "#pets",
+            "#shorts",
+            "#viral",
+            "#fyp",
+            "#trending",
+            "#funnyanimals",
+            "#petlover",
+            "#cat",
+            "#dog",
+            "#cuteanimals",
+            "#animalsofinstagram",
+            "#wildlife",
+            "#nature",
+            "#funnyvideos",
+            "#shortsvideo",
+            "#youtubeshorts",
+            "#reels",
+            "#instagood",
+            "#happy",
+            "#comedy",
+            "#fail",
+            "#tryhard",
+            "#animalsoftiktok",
+            "#fypシ",
+            "#explorepage",
+            "#dailydose",
+            "#shortfeed"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 34,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 0.97,
+          "description_len": 220,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "none|m210": {
+        "steps": {
+          "titles": {
+            "sec": 17.5,
+            "completion_tokens": 206,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 6.0,
+            "completion_tokens": 48,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 9.5,
+            "completion_tokens": 96,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 33.0,
+        "outputs": {
+          "titles": [
+            "ЖАНИН, Я К ТЕБЕ ЗАФЛИЮ! 😂🏃‍♂️",
+            "КОГДА ДРУГ ЗАБЫЛ ИМЯ… 🤣",
+            "ГЯБРА! Смешной крик друга 🐶",
+            "ЗАФЛИЯТЬ К ДРУГУ ЗА 0.5 СЕК 🤪",
+            "ЭТОТ ЗОВ НЕЛЬЗЯ ПРОПУСТИТЬ! 🔊",
+            "ЖАНИН: «Я ПРИШЕЛ!» 🐕💨",
+            "САМАЯ ГРОМКАЯ ПРИГЛАШЕНИЕ 📣",
+            "КОГДА ТЫ ТАК ХОЧЕШЬ В ИГРУ 🎮",
+            "ГЯБРА! ЛЕГЕНДАРНЫЙ КРИК 🤣",
+            "ЖАНИН, ОТВЕТЬ МНЕ! 😭🐾"
+          ],
+          "description": "Забавный момент с животными, вызывающий улыбку. Смешное поведение питомца заставляет смеяться. Отличный контент для поднятия настроения. Смотрите, как животные радуют нас своими шалостями.",
+          "hashtags": [
+            "#shorts",
+            "#cats",
+            "#funny",
+            "#animals",
+            "#cat",
+            "#pets",
+            "#humor",
+            "#lol",
+            "#funnyvideo",
+            "#catlover",
+            "#catsoftiktok",
+            "#catlife",
+            "#cute",
+            "#kitty",
+            "#catmemes",
+            "#petsoftiktok",
+            "#viral",
+            "#trending",
+            "#comedy",
+            "#laugh",
+            "#catfails",
+            "#kitten",
+            "#furry",
+            "#animalsoftiktok",
+            "#catvideo",
+            "#funnycats",
+            "#zabava",
+            "#memes",
+            "#shortsfeed"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 29,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 188,
+          "hashtags_count": 29,
+          "hashtags_ok": true
+        }
+      },
+      "none|m990": {
+        "steps": {
+          "titles": {
+            "sec": 17.8,
+            "completion_tokens": 213,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 6.7,
+            "completion_tokens": 58,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 9.2,
+            "completion_tokens": 94,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 33.7,
+        "outputs": {
+          "titles": [
+            "ОНИ ДЕЙСТВИТЕЛЬНО НЕ СПЫЛИ?! 😂",
+            "ЭТО НЕ БЕГИМ! ЧЕ? ТОЛЬКО ТЫ 🐶",
+            "ЗАБЫЛИ ПРО СПАНЬЕ?! ШОК КОНТЕНТ",
+            "КОГДА ЗАБЫВАЕШЬ ПРО СОН ВДВОЕМ 🐾",
+            "НЕ СПЫЛИ! ЭТО ЖЕ НЕВЕРОЯТНО 😱",
+            "А ЧЕ? ТОЛЬКО ТЫ! СМЕШНОЙ МОМЕНТ",
+            "ОНИ ЗАБЫЛИ ПРО СПАНЬЕ?! ПОМОГИТЕ 😂",
+            "НЕ БЕГИМ?! ИЛИ ВСЕ ЖЕ БЕГИМ? 🏃‍♂️",
+            "ЭТО НЕ СПАНЬЕ! ПОЧЕМУ ТАК СМЕШНО",
+            "ЗАБЫЛИ ПРО СОН! ЭТО ПРОСТО ХИТРОСТЬ"
+          ],
+          "description": "Смешной момент с животными, когда питомцы внезапно решают не бежать. Забавная ситуация вызывает улыбку у зрителей. Смотрите это веселое видео до конца, чтобы увидеть, как животные реагируют на команду. Отличный контент для поднятия настроения.",
+          "hashtags": [
+            "#shorts",
+            "#animals",
+            "#pets",
+            "#funny",
+            "#cat",
+            "#dog",
+            "#cute",
+            "#viral",
+            "#trending",
+            "#fyp",
+            "#foryou",
+            "#explore",
+            "#petssoftiktok",
+            "#catsoftiktok",
+            "#dogsoftiktok",
+            "#animallovers",
+            "#petlover",
+            "#funnyanimals",
+            "#cats",
+            "#dogs",
+            "#kittens",
+            "#puppies",
+            "#cuteanimals",
+            "#funnycats",
+            "#funnydogs",
+            "#petlife",
+            "#animalvideo",
+            "#shortsvideo"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 35,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 243,
+          "hashtags_count": 28,
+          "hashtags_ok": true
+        }
+      },
+      "none|m60": {
+        "steps": {
+          "titles": {
+            "sec": 13.3,
+            "completion_tokens": 154,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 6.3,
+            "completion_tokens": 57,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 8.9,
+            "completion_tokens": 93,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 28.5,
+        "outputs": {
+          "titles": [
+            "Кот vs Пылесос: кто победит? 🤖",
+            "Собака забыла, как лаять 😂",
+            "Щенок не верит своим глазам! 👀",
+            "Когда кот понял, что он не один 🐈",
+            "Самый нелепый прыжок в истории 🐕",
+            "Хомяк в шоке от размера ореха 🐹",
+            "Собака украла всё, что могла! 🐶",
+            "Кот против зеркала: исход вас удивит 🪞",
+            "Панда упала... но смешно! 🐼",
+            "Животные не ожидали такого 😱"
+          ],
+          "description": "Посмотрите на эти смешные моменты с животными! Видео без слов, только веселый визуальный ряд и звуки природы. Идеально для поднятия настроения и смеха. Смотрите до конца, чтобы увидеть самые забавные реакции питомцев на необычные ситуации.",
+          "hashtags": [
+            "#shorts",
+            "#animals",
+            "#cats",
+            "#dogs",
+            "#pets",
+            "#funny",
+            "#humor",
+            "#cute",
+            "#comedy",
+            "#fail",
+            "#memes",
+            "#viral",
+            "#trending",
+            "#explore",
+            "#fyp",
+            "#reels",
+            "#tiktok",
+            "#instagram",
+            "#youtube",
+            "#animallover",
+            "#catlover",
+            "#doglover",
+            "#funnyvideos",
+            "#cuteanimals",
+            "#petsoftiktok",
+            "#catsoftiktok",
+            "#dogsoftiktok",
+            "#shortsfeed",
+            "#viralshorts",
+            "#animalfails"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 38,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 0.99,
+          "description_len": 239,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "low|m990": {
+        "steps": {
+          "titles": {
+            "sec": 262.8,
+            "completion_tokens": 3480,
+            "reasoning_tokens": 3181,
+            "error": null
+          },
+          "description": {
+            "sec": 156.7,
+            "completion_tokens": 2093,
+            "reasoning_tokens": 2016,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 181.0,
+            "completion_tokens": 2392,
+            "reasoning_tokens": 2272,
+            "error": null
+          }
+        },
+        "total_sec": 600.5,
+        "outputs": {
+          "titles": [
+            "БЕЖИТ ТОЛЬКО ОН! 🐾",
+            "Они этого точно не ожидали...",
+            "СОВСЕМ НЕ ЖДАЛИ ЭТОГО 💥",
+            "Только один в ПАНИКЕ",
+            "ПЫТАЛИСЬ НЕ ЗАМЕТИТЬ...",
+            "ШОК: ВСЕ ЗАМЕРЛИ, КРОМЕ ОДНОГО 😱",
+            "Не ожидали ПОВОРОТА...",
+            "ОНИ ДУМАЛИ, ЧТО ВСЁ ОК",
+            "БЕГСТВО: ТОЛЬКО ОДИН! 🐶",
+            "НЕ ЗАМЕТИЛИ МОМЕНТА..."
+          ],
+          "description": "Забавный момент с животными, когда питомцы неожиданно решили не убегать. В коротком видео показаны смешные реакции животных и их странная реакция на происходящее. Идеально для тех, кто ищет свежие смешные моменты с животными и хочет поднять себе настроение. Подписывайтесь на канал за новыми короткими видео про животных.",
+          "hashtags": [
+            "#animals",
+            "#cats",
+            "#dogs",
+            "#pets",
+            "#funnyanimals",
+            "#cuteanimals",
+            "#shorts",
+            "#youtubeshorts",
+            "#viral",
+            "#trending",
+            "#animallover",
+            "#funnyvideos",
+            "#petcomedy",
+            "#animalmemes",
+            "#wholesomeanimals",
+            "#animalsbeingderps",
+            "#funnyanimalsrussia",
+            "#animalfails",
+            "#petsofyoutube",
+            "#funnyreaction",
+            "#animalsunfiltered",
+            "#petlife",
+            "#animalshorts",
+            "#shortsviral",
+            "#funnypets",
+            "#animalvibes",
+            "#youtubeshortsfeed",
+            "#animalsbeinganimals",
+            "#funnymoments",
+            "#animalloverclub"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 32,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 1.0,
+          "description_len": 321,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "default|m990": {
+        "steps": {
+          "titles": {
+            "sec": 316.4,
+            "completion_tokens": 4096,
+            "reasoning_tokens": 3900,
+            "error": "Пустой ответ модели qwen/qwen3.6-35b-a3b после удаления <think>: рассуждение не уместилось в max_tokens=4096. Увеличьте лимит или отключите thinking в LM Studio."
+          },
+          "description": {
+            "sec": 104.0,
+            "completion_tokens": 1361,
+            "reasoning_tokens": 1289,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 177.2,
+            "completion_tokens": 2345,
+            "reasoning_tokens": 2218,
+            "error": null
+          }
+        },
+        "total_sec": 597.5,
+        "outputs": {
+          "titles": [],
+          "description": "Смешной момент с домашними животными, который обязательно поднимет настроение! Питомцы решили не бежать, а просто наблюдать за происходящим. Милые паузы и забавные реакции в одном коротком видео о животных. Смотрите, как любимцы создают свои правила и делятся с вами хорошим настроением.",
+          "hashtags": [
+            "#animals",
+            "#pets",
+            "#funnyanimals",
+            "#cuteanimals",
+            "#animalvideo",
+            "#petsbeingdorks",
+            "#funnypets",
+            "#petfails",
+            "#animalhumor",
+            "#petcomedy",
+            "#confusedpets",
+            "#animalreactions",
+            "#funnymoments",
+            "#shorts",
+            "#youtubeshorts",
+            "#viralshorts",
+            "#trendingshorts",
+            "#fyp",
+            "#explore",
+            "#животные",
+            "#смешныеживотные",
+            "#питомцы",
+            "#животныесмешно",
+            "#shortsru",
+            "#юмор",
+            "#смешно",
+            "#короткоевидео",
+            "#animalshorts",
+            "#petlife",
+            "#funnyvideo"
+          ]
+        },
+        "metrics": {
+          "titles_count": 0,
+          "titles_exactly_10": false,
+          "titles_max_len": 0,
+          "titles_over_60": 0,
+          "titles_unique": 0,
+          "titles_cyrillic_ratio": 0.0,
+          "description_len": 287,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      }
+    },
+    "load": {
+      "load_sec": 107.7,
+      "context_length": 16384,
+      "available_drop_mib": 10110,
+      "gtt_delta_mib": 8458,
+      "size_gib": 20.6
+    },
+    "run_memory": {
+      "peak_available_drop_mib": 13306,
+      "peak_gtt_mib": 9951,
+      "peak_vram_mib": 489
     }
   }
 }
