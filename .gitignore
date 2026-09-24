@@ -34,3 +34,7 @@ export/output/
 
 # Веса YOLO, которые ultralytics скачивает в корень при экспорте в ONNX
 *.pt
+
+# Музыку кладёт пользователь сам (чужой трек = претензия Content ID на YouTube): в репозиторий не попадает
+assets/music/*
+!assets/music/README.md

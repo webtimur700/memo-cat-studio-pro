@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from core.entities.settings import ShortsSettings, UserSettings, ViralScoreSettings
+from core.entities.settings import AudioSettings, ShortsSettings, UserSettings, ViralScoreSettings
 from core.entities.subtitle import WordTiming
 from pipeline.pipeline_runner import PipelineRunner
 
@@ -54,6 +54,7 @@ def _settings() -> UserSettings:
         base,
         shorts=ShortsSettings(allowed_durations_sec=(5,), min_duration_sec=5, max_duration_sec=5),
         viral_score=ViralScoreSettings(queue_threshold=0),
+        audio=AudioSettings(music_enabled=False),   # музыка проверяется отдельными тестами, не берём настоящую assets/music
     )
 
 
@@ -172,3 +173,51 @@ def test_no_speech_means_no_subtitle_files(short_video, tmp_path, monkeypatch):
     out = tmp_path / "out"
     clips = PipelineRunner(models_dir=tmp_path / "no_models", output_dir=out).process_video(short_video, _settings())
     assert clips and clips[0].subtitle_paths == () and list(out.glob("*.srt")) == []
+
+
+def _music_track(tmp_path) -> Path:
+    library = tmp_path / "music"
+    library.mkdir()
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=1000:duration=10",
+                    str(library / "song.wav")], check=True)
+    return library
+
+
+def _audio_stream_count(path: Path) -> int:
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", str(path)],
+                         capture_output=True, text=True, check=True).stdout
+    return len(out.split())
+
+
+def test_music_from_library_is_mixed_in_and_recorded(short_video, tmp_path, monkeypatch):
+    library = _music_track(tmp_path)
+    settings = _settings().with_field("audio", music_enabled=True, music_library_path=str(library))
+    out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, settings)
+    assert _audio_stream_count(clips[0].output_path) == 1
+    meta = json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))
+    assert meta["music_file"] == "song.wav"
+    assert list(out.glob("_tmp_*")) == []
+
+
+def test_empty_music_folder_gives_clip_without_music_and_logs_reason(short_video, tmp_path, monkeypatch):
+    from loguru import logger
+
+    messages: list[str] = []
+    sink = logger.add(lambda m: messages.append(str(m)), level="INFO")
+    try:
+        library = tmp_path / "empty_music"
+        library.mkdir()
+        settings = _settings().with_field("audio", music_enabled=True, music_library_path=str(library))
+        out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, settings)
+    finally:
+        logger.remove(sink)
+    assert clips and clips[0].output_path.exists()
+    assert json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))["music_file"] is None
+    assert any("Музыка не добавлена" in m for m in messages)
+
+
+def test_music_disabled_in_settings_ignores_library(short_video, tmp_path, monkeypatch):
+    library = _music_track(tmp_path)
+    settings = _settings().with_field("audio", music_enabled=False, music_library_path=str(library))
+    out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, settings)
+    assert json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))["music_file"] is None

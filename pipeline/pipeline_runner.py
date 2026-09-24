@@ -27,6 +27,7 @@ import cv2
 import numpy as np
 from loguru import logger
 
+from audio.music_mixer import list_tracks, mix_music, pick_track, probe_duration, speech_intervals
 from core.entities.clip import Clip
 from core.entities.detection import BoundingBox, Detection, is_animal_class
 from core.entities.moment import Moment
@@ -279,6 +280,7 @@ class PipelineRunner:
         crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
         words = self._transcribe_moment(video_path, moment, settings)
         original_transcript = " ".join(w.text for w in words)
+        speech_words = words   # тайминги речи для приглушения музыки (перевод их не меняет, но берём оригинал)
         words = self._translate_subtitles(words, self.last_moment_language, settings)
         zone = SafeZone.from_settings((settings.export.width, settings.export.height), settings.safe_zone)
         output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
@@ -318,6 +320,7 @@ class PipelineRunner:
             if subtitle_ass_path is not None and subtitle_ass_path not in subtitle_files.values():
                 subtitle_ass_path.unlink(missing_ok=True)
 
+        music_file = self._add_music(output_path, speech_words, settings)
         transcript = " ".join(w.text for w in words)
         cover_frame = self._pick_cover_frame(video_path, moment)
         content = self._generate_content(transcript, cover_frame)
@@ -327,6 +330,7 @@ class PipelineRunner:
             output_path, video_path, moment, transcript, title, content, cover_path,
             transcript_original=original_transcript, language=self.last_moment_language,
             subtitle_files=subtitle_files,
+            music_file=music_file,
         )
 
         return Clip(
@@ -343,6 +347,29 @@ class PipelineRunner:
         )
 
     # ------------------------------------------------------------------
+    def _add_music(self, output_path: Path, speech_words: list[WordTiming], settings: UserSettings) -> str | None:
+        """Фоновая музыка из assets/music/ (приглушается на речи). Возвращает имя трека или None (без музыки)."""
+        audio = settings.audio
+        if not audio.music_enabled:
+            return None
+        library = Path(audio.music_library_path)
+        library = library if library.is_absolute() else PROJECT_ROOT / library
+        tracks = list_tracks(library)
+        if not tracks:
+            logger.info("Музыка не добавлена к {}: в {} нет треков (положите туда свою музыку без авторских ограничений)",
+                        output_path.name, library)
+            return None
+        try:
+            duration = probe_duration(output_path)
+            track = pick_track(tracks, output_path.stem, duration)
+            intervals = speech_intervals(speech_words, duration) if audio.duck_on_speech else []
+            mix_music(output_path, track, duration, audio.music_volume, intervals, audio.duck_level_db,
+                      audio_codec=settings.export.codec_audio)
+            return track.name
+        except Exception as exc:
+            logger.warning("Не удалось добавить музыку к {}: {} — клип остаётся с оригинальным звуком", output_path.name, exc)
+            return None
+
     def _build_branding(self, settings: UserSettings, zone: SafeZone | None = None) -> BrandingOverlay | None:
         """Логотип (assets/logo/logo.png или "Memo Cat" по умолчанию) + Subscribe."""
         try:
@@ -439,6 +466,7 @@ class PipelineRunner:
         transcript_original: str = "",
         language: str | None = None,
         subtitle_files: dict[str, Path] | None = None,
+        music_file: str | None = None,
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
         payload = {
@@ -455,6 +483,7 @@ class PipelineRunner:
             "transcript": transcript,
             "transcript_original": transcript_original if transcript_original != transcript else "",
             "speech_language": language,
+            "music_file": music_file,
             "subtitle_files": {fmt: path.name for fmt, path in (subtitle_files or {}).items()},
             "llm_errors": list(content.errors),
             "llm_model": self._llm_model_name(),

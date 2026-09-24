@@ -151,6 +151,27 @@ class SettingsView(QWidget):
         self._quality_combo.currentTextChanged.connect(self._on_field_changed)
         form.addRow(QLabel("Качество экспорта"), self._quality_combo)
 
+        # --- Фоновая музыка ---
+        self._music_checkbox = QCheckBox("Фоновая музыка из assets/music/")
+        self._music_checkbox.setChecked(initial_settings.audio.music_enabled)
+        self._music_checkbox.stateChanged.connect(self._on_field_changed)
+        self._music_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self._music_volume_slider.setRange(0, 100)
+        self._music_volume_slider.setValue(round(initial_settings.audio.music_volume * 100))
+        self._music_volume_label = QLabel(f"{self._music_volume_slider.value()}%")
+        self._music_volume_slider.valueChanged.connect(lambda v: self._music_volume_label.setText(f"{v}%"))
+        self._music_volume_slider.valueChanged.connect(self._on_field_changed)
+        self._duck_checkbox = QCheckBox("Приглушать музыку на речи")
+        self._duck_checkbox.setChecked(initial_settings.audio.duck_on_speech)
+        self._duck_checkbox.stateChanged.connect(self._on_field_changed)
+        music_container = QWidget()
+        music_layout = QVBoxLayout(music_container)
+        music_layout.setContentsMargins(0, 0, 0, 0)
+        music_layout.addWidget(self._music_checkbox)
+        music_layout.addWidget(self._build_slider_row(self._music_volume_slider, self._music_volume_label))
+        music_layout.addWidget(self._duck_checkbox)
+        form.addRow(QLabel("Музыка"), music_container)
+
         # --- Очередь: сколько видео одновременно ---
         self._concurrent_spin = QSpinBox()
         self._concurrent_spin.setRange(1, 16)
@@ -207,6 +228,7 @@ class SettingsView(QWidget):
         )
 
         updated = updated.with_field("batch", max_concurrent_videos=self._concurrent_spin.value())
+        updated = updated.with_field("audio", music_enabled=self._music_checkbox.isChecked(), music_volume=self._music_volume_slider.value() / 100, duck_on_speech=self._duck_checkbox.isChecked())
 
         self._settings = updated
         self._save_button.setEnabled(False)

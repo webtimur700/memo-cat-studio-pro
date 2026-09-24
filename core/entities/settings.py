@@ -95,6 +95,27 @@ class ExportSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AudioSettings:
+    """Фоновая музыка: треки лежат в music_library_path (кладёт пользователь), под речью приглушается."""
+
+    music_enabled: bool = True
+    music_volume: float = 0.2            # линейный множитель громкости трека (0..1) относительно оригинала
+    duck_on_speech: bool = True
+    duck_level_db: float = -12.0         # на сколько дБ музыка тише, пока в клипе говорят
+    music_library_path: str = "assets/music/"
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any]) -> "AudioSettings":
+        return cls(
+            music_enabled=bool(raw.get("music_enabled", True)),
+            music_volume=min(1.0, max(0.0, float(raw.get("music_volume", 0.2)))),
+            duck_on_speech=bool(raw.get("duck_on_speech", True)),
+            duck_level_db=float(raw.get("duck_level_db", -12.0)),
+            music_library_path=str(raw.get("music_library_path", "assets/music/")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class BatchSettings:
     """Очередь пакетной обработки: сколько видео обрабатывается одновременно (остальные ждут)."""
 
@@ -120,6 +141,7 @@ class UserSettings:
     export: ExportSettings = field(default_factory=ExportSettings)
     safe_zone: SafeZoneSettings = field(default_factory=SafeZoneSettings)
     batch: BatchSettings = field(default_factory=BatchSettings)
+    audio: AudioSettings = field(default_factory=AudioSettings)
 
     @classmethod
     def load_from_yaml(cls, path: Path) -> "UserSettings":
@@ -211,6 +233,7 @@ class UserSettings:
                 right_px=safe_raw.get("right_px", 150),
             ),
             batch=BatchSettings.from_raw(raw.get("batch", {})),
+            audio=AudioSettings.from_raw(raw.get("audio", {})),
         )
 
     def with_field(self, section: str, **changes: Any) -> "UserSettings":
