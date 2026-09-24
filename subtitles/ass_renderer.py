@@ -27,7 +27,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},{primary_color},{highlight_color},{outline_color},{back_color},{bold},0,0,0,100,100,0,0,1,{outline_width},{shadow},2,40,40,{margin_v},1
+Style: Default,{font_name},{font_size},{primary_color},{highlight_color},{outline_color},{back_color},{bold},0,0,0,100,100,0,0,1,{outline_width},{shadow},2,{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -128,7 +128,12 @@ def render_ass(
     style_preset: str = "modern_bold",
     play_res_x: int = 1080,
     play_res_y: int = 1920,
+    margin_l: int = 40,
+    margin_r: int = 40,
+    margin_v: int | None = None,
 ) -> str:
+    """margin_l/margin_r/margin_v — расстояния от краёв кадра до текста (для
+    безопасной зоны Shorts, см. effects/safe_zone.py); margin_v=None — из пресета."""
     style = STYLE_PRESETS.get(style_preset, STYLE_PRESETS["modern_bold"])
 
     header = ASS_HEADER_TEMPLATE.format(
@@ -143,7 +148,9 @@ def render_ass(
         bold=style.bold,
         outline_width=style.outline_width,
         shadow=style.shadow,
-        margin_v=style.margin_v,
+        margin_l=margin_l,
+        margin_r=margin_r,
+        margin_v=style.margin_v if margin_v is None else margin_v,
     )
 
     lines: list[str] = []
@@ -154,6 +161,12 @@ def render_ass(
         lines.append(f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text}")
 
     return header + "\n".join(lines) + "\n"
+
+
+def estimate_subtitle_band_height(style_preset: str = "modern_bold", lines: int = 2) -> int:
+    """Высота (px) полосы субтитров в `lines` строк — для резервирования места под неё."""
+    style = STYLE_PRESETS.get(style_preset, STYLE_PRESETS["modern_bold"])
+    return int(style.font_size * 1.25 * lines + style.outline_width * 2)
 
 
 def render_srt(segments: list[SubtitleSegment]) -> str:

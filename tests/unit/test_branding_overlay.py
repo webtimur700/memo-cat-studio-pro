@@ -2,6 +2,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from core.entities.settings import UserSettings
+from effects.safe_zone import SafeZone
 from effects.branding_overlay import (
     BrandingOverlay,
     create_default_logo,
@@ -26,18 +28,23 @@ def test_default_logo_is_generated_when_missing(tmp_path):
         assert image.mode == "RGBA" and image.getbbox() is not None
 
 
-def test_logo_position_corners():
-    frame, sprite = (1080, 1920), (200, 80)
-    assert logo_xy("top_right", frame, sprite)[0] > frame[0] // 2
-    assert logo_xy("top_left", frame, sprite)[0] < frame[0] // 2
-    assert logo_xy("bottom_left", frame, sprite)[1] > frame[1] // 2
+ZONE = SafeZone.from_settings((1080, 1920), UserSettings().safe_zone)
+
+
+def test_logo_position_corners_inside_safe_zone():
+    sprite = (200, 80)
+    for position in ("top_right", "top_left", "bottom_right", "bottom_left"):
+        x, y = logo_xy(position, ZONE, sprite)
+        assert ZONE.x1 <= x and x + sprite[0] <= ZONE.x2 and ZONE.y1 <= y and y + sprite[1] <= ZONE.y2
+    assert logo_xy("top_right", ZONE, sprite)[0] > 540 > logo_xy("top_left", ZONE, sprite)[0]
+    assert logo_xy("bottom_left", ZONE, sprite)[1] > 960
     # кнопка — на противоположной от логотипа стороне
-    assert subscribe_xy("top_right", frame, (300, 80))[0] < frame[0] // 2
-    assert subscribe_xy("top_left", frame, (300, 80))[0] > frame[0] // 2
+    assert subscribe_xy("top_right", ZONE, (300, 80))[0] < 540
+    assert subscribe_xy("top_left", ZONE, (300, 80))[0] > 540
 
 
 def test_animation_timeline(tmp_path):
-    overlay = BrandingOverlay.build((1080, 1920), resolve_logo_path(tmp_path), "top_right", True)
+    overlay = BrandingOverlay.build((1080, 1920), resolve_logo_path(tmp_path), "top_right", True, zone=ZONE)
 
     def alpha_bbox(t):
         canvas = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))

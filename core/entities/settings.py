@@ -69,6 +69,18 @@ class BrandingSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class SafeZoneSettings:
+    """Поля (px при 1080x1920), которые интерфейс YouTube Shorts перекрывает:
+    сверху — поиск/камера, снизу — название, канал, описание, справа — колонка
+    лайков/комментариев. Плашка, субтитры, логотип и Subscribe ставятся внутри."""
+
+    top_px: int = 250
+    bottom_px: int = 450
+    left_px: int = 60
+    right_px: int = 150
+
+
+@dataclass(frozen=True, slots=True)
 class ExportSettings:
     codec_video: str = "h264"
     codec_audio: str = "aac"
@@ -92,6 +104,7 @@ class UserSettings:
     subtitles: SubtitleSettings = field(default_factory=SubtitleSettings)
     branding: BrandingSettings = field(default_factory=BrandingSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
+    safe_zone: SafeZoneSettings = field(default_factory=SafeZoneSettings)
 
     @classmethod
     def load_from_yaml(cls, path: Path) -> "UserSettings":
@@ -106,6 +119,7 @@ class UserSettings:
         subs_raw = raw.get("subtitles", {})
         branding_raw = raw.get("branding", {})
         export_raw = raw.get("export", {})
+        safe_raw = raw.get("safe_zone", {})
 
         return cls(
             shorts=ShortsSettings(
@@ -171,6 +185,12 @@ class UserSettings:
                 height=export_raw.get("resolution", [1080, 1920])[1],
                 quality_preset=export_raw.get("quality_preset", "high"),
                 bitrate_mbps=export_raw.get("bitrate_mbps", 12),
+            ),
+            safe_zone=SafeZoneSettings(
+                top_px=safe_raw.get("top_px", 250),
+                bottom_px=safe_raw.get("bottom_px", 450),
+                left_px=safe_raw.get("left_px", 60),
+                right_px=safe_raw.get("right_px", 150),
             ),
         )
 

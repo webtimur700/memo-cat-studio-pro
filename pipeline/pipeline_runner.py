@@ -36,13 +36,14 @@ from core.exceptions import MemoCatError
 from core.entities.subtitle import WordTiming
 from cutting.clip_selector_service import WindowScore, select_moments
 from effects.branding_overlay import BrandingOverlay, resolve_logo_path
+from effects.safe_zone import SafeZone
 from effects.cover_generator import generate_cover
 from effects.collision_detector import BannerPosition, resolve_banner_position_over_time
 from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
 from llm.content_generator import ClipContent, generate_clip_content
 from scoring.viral_score_service import ScoreInputs, compute_viral_score
-from subtitles.ass_renderer import render_ass
+from subtitles.ass_renderer import estimate_subtitle_band_height, render_ass
 from subtitles.subtitle_service import group_words_into_segments
 from video.ffmpeg_wrapper import FFmpegWrapper
 from video.frame_extractor import FrameExtractor
@@ -56,6 +57,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WINDOW_SEC = 5.0
 MIN_PAUSE_SEC = 0.35          # промежуток между словами, считающийся паузой (можно резать)
 SPEECH_EDGE_MARGIN_SEC = 0.15
+SUBTITLE_BANNER_GAP_PX = 24   # зазор между плашкой и полосой субтитров
 SAMPLE_FPS_SCAN = 1.0     # частота сэмплирования при поиске моментов
 SAMPLE_FPS_CROP = 2.0     # частота сэмплирования при кадрировании внутри момента
 MOTION_NORMALIZATION = 25.0  # эмпирический делитель для перевода средней разницы яркости в 0..1
@@ -281,11 +283,16 @@ class PipelineRunner:
     ) -> Clip | None:
         crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
         words = self._transcribe_moment(video_path, moment, settings)
-        subtitle_ass_path = self._write_subtitles(video_path, moment, words, settings)
-        branding = self._build_branding(settings)
+        zone = SafeZone.from_settings((settings.export.width, settings.export.height), settings.safe_zone)
+        subtitle_ass_path = self._write_subtitles(video_path, moment, words, settings, zone)
+        branding = self._build_branding(settings, zone)
         banner_appear_sec, banner_duration_sec = 4.0, 5.0
+        subtitles_during_banner = subtitle_ass_path is not None and any(
+            w.end_sec > banner_appear_sec and w.start_sec < banner_appear_sec + banner_duration_sec for w in words
+        )
         banner_rect = self._build_banner_rect(
-            settings, crop_samples, head_regions, branding, banner_appear_sec, banner_duration_sec
+            settings, crop_samples, head_regions, branding, banner_appear_sec, banner_duration_sec,
+            zone=zone, subtitles_during_banner=subtitles_during_banner,
         )
 
         output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
@@ -334,7 +341,7 @@ class PipelineRunner:
         )
 
     # ------------------------------------------------------------------
-    def _build_branding(self, settings: UserSettings) -> BrandingOverlay | None:
+    def _build_branding(self, settings: UserSettings, zone: SafeZone | None = None) -> BrandingOverlay | None:
         """Логотип (assets/logo/logo.png или "Memo Cat" по умолчанию) + Subscribe."""
         try:
             branding = BrandingOverlay.build(
@@ -342,6 +349,7 @@ class PipelineRunner:
                 logo_path=resolve_logo_path(self._assets_dir),
                 logo_position=settings.branding.logo_position,
                 subscribe_enabled=settings.branding.subscribe_button_enabled,
+                zone=zone,
             )
         except Exception as exc:
             logger.warning("Брендинг (логотип/Subscribe) недоступен: {} — экспорт без него", exc)
@@ -572,14 +580,25 @@ class PipelineRunner:
         return pauses
 
     def _write_subtitles(
-        self, video_path: Path, moment: Moment, words: list[WordTiming], settings: UserSettings
+        self,
+        video_path: Path,
+        moment: Moment,
+        words: list[WordTiming],
+        settings: UserSettings,
+        zone: SafeZone | None = None,
     ) -> Path | None:
         if not words or not settings.subtitles.burn_in:
             return None
         ass_path = self._output_dir / f"_tmp_subs_{video_path.stem}_{int(moment.start_sec)}.ass"
         try:
             segments = group_words_into_segments(words)
-            ass_content = render_ass(segments, style_preset=settings.subtitles.style_preset)
+            frame_size = (settings.export.width, settings.export.height)
+            margin_l, margin_r, margin_v = (zone or SafeZone.from_settings(frame_size, settings.safe_zone)).subtitle_margins(frame_size)
+            ass_content = render_ass(
+                segments, style_preset=settings.subtitles.style_preset,
+                play_res_x=frame_size[0], play_res_y=frame_size[1],
+                margin_l=margin_l, margin_r=margin_r, margin_v=margin_v,
+            )
             ass_path.parent.mkdir(parents=True, exist_ok=True)
             ass_path.write_text(ass_content, encoding="utf-8")
             return ass_path
@@ -633,9 +652,22 @@ class PipelineRunner:
         branding: BrandingOverlay | None,
         appear_sec: float,
         duration_sec: float,
+        zone: SafeZone | None = None,
+        subtitles_during_banner: bool = False,
     ) -> tuple[int, int, int, int]:
+        """Прямоугольник плашки внутри безопасной зоны Shorts. Если в время показа плашки
+        идут субтитры, нижняя граница зоны поднимается над полосой субтитров, поэтому они
+        не пересекаются; дальше плашка обходит голову животного, логотип и Subscribe.
+        """
         width, height = settings.export.width, settings.export.height
-        banner_width, banner_height = int(width * 0.85), 220
+        zone = zone or SafeZone.from_settings((width, height), settings.safe_zone)
+
+        bounds_zone = zone
+        if subtitles_during_banner:
+            band = estimate_subtitle_band_height(settings.subtitles.style_preset)
+            bounds_zone = zone.with_bottom(zone.y2 - band - SUBTITLE_BANNER_GAP_PX)
+
+        banner_width, banner_height = min(int(width * 0.85), bounds_zone.width), 220
 
         try:
             preferred_position = BannerPosition(settings.branding.banner_position)
@@ -649,7 +681,7 @@ class PipelineRunner:
             )
 
         resolution = resolve_banner_position_over_time(
-            preferred_position, obstacles, width, height, banner_width, banner_height
+            preferred_position, obstacles, width, height, banner_width, banner_height, bounds=bounds_zone.as_box()
         )
         if resolution.was_repositioned:
             logger.info(

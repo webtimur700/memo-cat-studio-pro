@@ -90,6 +90,7 @@ def test_pipeline_produces_clip_cover_and_metadata(short_video, tmp_path, monkey
 
     # логотип (фиолетовый) реально запечён в клип: кадр на 2 с, пиксель в центре тела логотипа
     from effects.branding_overlay import logo_xy
+    from effects.safe_zone import SafeZone
 
     frame_path = tmp_path / "frame.png"
     subprocess.run(
@@ -98,7 +99,7 @@ def test_pipeline_produces_clip_cover_and_metadata(short_video, tmp_path, monkey
     )
     with Image.open(frame_path) as frame:
         logo_w, logo_h = int(1080 * 0.19), int(1080 * 0.19 * 240 / 640)
-        x, y = logo_xy("top_right", (1080, 1920), (logo_w, logo_h))
+        x, y = logo_xy("top_right", SafeZone.from_settings((1080, 1920), _settings().safe_zone), (logo_w, logo_h))
         r, g, b = frame.convert("RGB").getpixel((x + 8, y + logo_h - 10))
     assert (abs(r - 124) < 30, abs(g - 92) < 30, abs(b - 255) < 30) == (True, True, True)
 

@@ -3,6 +3,7 @@ from pathlib import Path
 from core.entities.detection import BoundingBox, Detection
 from core.entities.settings import UserSettings
 from effects.branding_overlay import BrandingOverlay, resolve_logo_path
+from effects.safe_zone import SafeZone
 from effects.collision_detector import BannerPosition, resolve_banner_position_over_time
 from export.dynamic_crop import CropSample
 from pipeline.pipeline_runner import PipelineRunner, _motion_direction_x
@@ -72,7 +73,7 @@ def test_banner_avoids_animal_low_in_frame(tmp_path):
     runner = PipelineRunner(output_dir=tmp_path)
     settings = UserSettings()
     samples = _samples(CropWindow(0, 0, 540, 960, 1.0, 0.0))
-    low_head = BoundingBox(50, 800, 450, 950)   # -> внизу выходного кадра
+    low_head = BoundingBox(50, 560, 450, 700)   # -> y 1120..1400 выходного кадра: на месте плашки в безопасной зоне
     rect = runner._build_banner_rect(settings, samples, [low_head] * 3, None, 4.0, 5.0)
     assert rect[1] < H // 2                     # плашка ушла наверх
 
@@ -84,12 +85,12 @@ def test_collision_avoidance_can_be_disabled(tmp_path):
     base = UserSettings()
     settings = replace(base, branding=replace(base.branding, collision_avoidance=False))
     samples = _samples(CropWindow(0, 0, 540, 960, 1.0, 0.0))
-    rect = runner._build_banner_rect(settings, samples, [BoundingBox(50, 800, 450, 950)] * 3, None, 4.0, 5.0)
+    rect = runner._build_banner_rect(settings, samples, [BoundingBox(50, 560, 450, 700)] * 3, None, 4.0, 5.0)
     assert rect[1] > H // 2
 
 
 def test_logo_and_subscribe_are_obstacles(tmp_path):
-    branding = BrandingOverlay.build((W, H), resolve_logo_path(tmp_path), "top_right", True)
+    branding = BrandingOverlay.build((W, H), resolve_logo_path(tmp_path), "top_right", True, zone=SafeZone.from_settings((W, H), UserSettings().safe_zone))
     runner = PipelineRunner(output_dir=tmp_path)
     obstacles = runner._banner_obstacles(UserSettings(), [], [], branding, 4.0, 5.0)
     assert len(obstacles) == 2                  # логотип + Subscribe (виден 1..7 с)

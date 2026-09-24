@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -122,6 +123,27 @@ class SettingsView(QWidget):
         zoom_layout.addWidget(self._build_slider_row(self._zoom_factor_slider, self._zoom_factor_label))
         form.addRow(QLabel("AI Zoom"), zoom_container)
 
+        # --- Безопасная зона Shorts (px при 1080x1920) ---
+        self._safe_zone_spins: dict[str, QSpinBox] = {}
+        safe_container = QWidget()
+        from PySide6.QtWidgets import QHBoxLayout as _HBox
+
+        safe_layout = _HBox(safe_container)
+        safe_layout.setContentsMargins(0, 0, 0, 0)
+        for field_name, caption, maximum in (
+            ("top_px", "Верх", 600), ("bottom_px", "Низ", 800), ("left_px", "Лево", 300), ("right_px", "Право", 300),
+        ):
+            spin = QSpinBox()
+            spin.setRange(0, maximum)
+            spin.setSingleStep(10)
+            spin.setSuffix(" px")
+            spin.setValue(getattr(initial_settings.safe_zone, field_name))
+            spin.valueChanged.connect(self._on_field_changed)
+            self._safe_zone_spins[field_name] = spin
+            safe_layout.addWidget(QLabel(caption))
+            safe_layout.addWidget(spin)
+        form.addRow(QLabel("Безопасная зона Shorts"), safe_container)
+
         # --- Качество экспорта ---
         self._quality_combo = QComboBox()
         self._quality_combo.addItems(QUALITY_PRESETS)
@@ -172,6 +194,9 @@ class SettingsView(QWidget):
             max_zoom_factor=self._zoom_factor_slider.value() / 10,
         )
         updated = updated.with_field("export", quality_preset=self._quality_combo.currentText())
+        updated = updated.with_field(
+            "safe_zone", **{name: spin.value() for name, spin in self._safe_zone_spins.items()}
+        )
 
         self._settings = updated
         self._save_button.setEnabled(False)

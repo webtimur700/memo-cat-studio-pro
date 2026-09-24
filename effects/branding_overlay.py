@@ -17,15 +17,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 from animation.logo_animator import compute_logo_animation_state
 from animation.subscribe_button_animator import compute_subscribe_button_scale
+from effects.safe_zone import SafeZone
 from effects.font_utils import DEFAULT_FALLBACK_FONT, preferred_title_fonts, resolve_font_path
 
 USER_LOGO_NAME = "logo.png"
 DEFAULT_LOGO_NAME = "default_logo.png"
 
 LOGO_WIDTH_RATIO = 0.19        # ширина логотипа от ширины кадра
-EDGE_MARGIN_PX = 48
-TOP_SAFE_MARGIN_PX = 120       # верх Shorts перекрывает интерфейс плеера
-BOTTOM_SAFE_MARGIN_PX = 260
+EDGE_GAP_PX = 12               # зазор от границы безопасной зоны (сама зона уже учитывает интерфейс Shorts)
 
 SUBSCRIBE_APPEAR_AT_SEC = 1.0
 SUBSCRIBE_VISIBLE_SEC = 6.0
@@ -111,24 +110,28 @@ def render_subscribe_sprite(frame_width: int) -> Image.Image:
     return sprite
 
 
-def logo_xy(position: str, frame_size: tuple[int, int], sprite_size: tuple[int, int]) -> tuple[int, int]:
-    """Левый верхний угол логотипа для top_left/top_right/bottom_left/bottom_right/top_center/bottom_center."""
-    fw, fh = frame_size
+def logo_xy(position: str, zone: SafeZone, sprite_size: tuple[int, int]) -> tuple[int, int]:
+    """Левый верхний угол логотипа внутри безопасной зоны для
+    top_left/top_right/bottom_left/bottom_right/top_center/bottom_center."""
     sw, sh = sprite_size
     vertical, _, horizontal = position.partition("_")
-    x = {"left": EDGE_MARGIN_PX, "right": fw - sw - EDGE_MARGIN_PX}.get(horizontal, (fw - sw) // 2)
-    y = fh - sh - BOTTOM_SAFE_MARGIN_PX if vertical == "bottom" else TOP_SAFE_MARGIN_PX
+    if horizontal == "left":
+        x = zone.x1 + EDGE_GAP_PX
+    elif horizontal == "right":
+        x = zone.x2 - sw - EDGE_GAP_PX
+    else:
+        x = zone.x1 + (zone.width - sw) // 2
+    y = zone.y2 - sh - EDGE_GAP_PX if vertical == "bottom" else zone.y1 + EDGE_GAP_PX
     return x, y
 
 
-def subscribe_xy(logo_position: str, frame_size: tuple[int, int], sprite_size: tuple[int, int]) -> tuple[int, int]:
-    """Кнопка — на противоположной от логотипа стороне, на той же высоте: не
+def subscribe_xy(logo_position: str, zone: SafeZone, sprite_size: tuple[int, int]) -> tuple[int, int]:
+    """Кнопка — на противоположной от логотипа стороне зоны, на той же высоте: не
     закрывает логотип и не лезет в правую колонку кнопок плеера Shorts."""
-    fw, fh = frame_size
     sw, sh = sprite_size
     vertical, _, horizontal = logo_position.partition("_")
-    x = fw - sw - EDGE_MARGIN_PX if horizontal == "left" else EDGE_MARGIN_PX
-    y = fh - sh - BOTTOM_SAFE_MARGIN_PX if vertical == "bottom" else TOP_SAFE_MARGIN_PX
+    x = zone.x2 - sw - EDGE_GAP_PX if horizontal == "left" else zone.x1 + EDGE_GAP_PX
+    y = zone.y2 - sh - EDGE_GAP_PX if vertical == "bottom" else zone.y1 + EDGE_GAP_PX
     return x, y
 
 
@@ -159,6 +162,7 @@ class BrandingOverlay:
     logo: Image.Image | None
     logo_position: str
     subscribe: Image.Image | None
+    zone: SafeZone
 
     @classmethod
     def build(
@@ -167,6 +171,7 @@ class BrandingOverlay:
         logo_path: Path | None,
         logo_position: str,
         subscribe_enabled: bool,
+        zone: SafeZone | None = None,
     ) -> "BrandingOverlay":
         logo = None
         if logo_path is not None:
@@ -175,7 +180,7 @@ class BrandingOverlay:
             except Exception as exc:
                 logger.warning("Логотип {} не загружен: {} — без логотипа", logo_path, exc)
         subscribe = render_subscribe_sprite(frame_size[0]) if subscribe_enabled else None
-        return cls(frame_size, logo, logo_position, subscribe)
+        return cls(frame_size, logo, logo_position, subscribe, zone or SafeZone(0, 0, frame_size[0], frame_size[1]))
 
     @property
     def is_empty(self) -> bool:
@@ -186,13 +191,13 @@ class BrandingOverlay:
         видны в интервале [window_start_sec, window_end_sec] — для обхода плашкой."""
         rects: list[tuple[int, int, int, int]] = []
         if self.logo is not None:
-            x, y = logo_xy(self.logo_position, self.frame_size, self.logo.size)
+            x, y = logo_xy(self.logo_position, self.zone, self.logo.size)
             rects.append((x, y, x + self.logo.width, y + self.logo.height))
         if self.subscribe is not None:
             visible_from = SUBSCRIBE_APPEAR_AT_SEC
             visible_to = SUBSCRIBE_APPEAR_AT_SEC + SUBSCRIBE_VISIBLE_SEC
             if visible_from < window_end_sec and window_start_sec < visible_to:
-                x, y = subscribe_xy(self.logo_position, self.frame_size, self.subscribe.size)
+                x, y = subscribe_xy(self.logo_position, self.zone, self.subscribe.size)
                 rects.append((x, y, x + self.subscribe.width, y + self.subscribe.height))
         return rects
 
@@ -203,7 +208,7 @@ class BrandingOverlay:
             state = compute_logo_animation_state(t)
             sprite = _scaled_with_opacity(self.logo, state.scale, state.opacity)
             if sprite is not None:
-                _paste_centered(canvas, sprite, logo_xy(self.logo_position, self.frame_size, self.logo.size), self.logo.size)
+                _paste_centered(canvas, sprite, logo_xy(self.logo_position, self.zone, self.logo.size), self.logo.size)
                 drawn = True
 
         if self.subscribe is not None:
@@ -215,7 +220,7 @@ class BrandingOverlay:
                     scale *= remaining / SUBSCRIBE_EXIT_SEC
                 sprite = _scaled_with_opacity(self.subscribe, scale, min(1.0, elapsed / 0.15 + 0.01))
                 if sprite is not None:
-                    xy = subscribe_xy(self.logo_position, self.frame_size, self.subscribe.size)
+                    xy = subscribe_xy(self.logo_position, self.zone, self.subscribe.size)
                     _paste_centered(canvas, sprite, xy, self.subscribe.size)
                     drawn = True
         return drawn

@@ -22,9 +22,9 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from effects.emoji_render import render_emoji_tile
 from effects.font_utils import (
     DEFAULT_FALLBACK_FONT,
-    find_emoji_font,
     is_emoji,
     preferred_title_fonts,
     resolve_font_path,
@@ -55,53 +55,6 @@ def _extract_emoji_and_text(raw_text: str) -> tuple[list[str], str]:
     text_only = "".join(ch for ch in raw_text if not is_emoji(ch))
     text_only = re.sub(r"\s+", " ", text_only).strip()
     return emojis, text_only
-
-
-_EMOJI_TILE_CACHE: dict[str, ImageFont.FreeTypeFont] = {}
-
-
-def _get_native_emoji_font() -> ImageFont.FreeTypeFont | None:
-    """NotoColorEmoji — bitmap-strike шрифт: он НЕ поддерживает произвольный
-    размер через truetype(..., size) (реальная ошибка "invalid pixel size",
-    пойманная тестом на этом шаге) — доступен только фиксированный набор
-    "strikes". Пробуем нативные размеры по убыванию, кэшируем первый рабочий.
-    Итоговый размер под style.emoji_size достигается последующим resize()
-    уже отрендеренного тайла, а не запросом размера у самого шрифта.
-    """
-    if "font" in _EMOJI_TILE_CACHE:
-        return _EMOJI_TILE_CACHE["font"]  # type: ignore[return-value]
-
-    # find_emoji_font() принимает шрифт только после пробного рендера: системный
-    # Noto Color Emoji на Fedora — COLRv1, Pillow его открывает, но рисует пустоту.
-    found = find_emoji_font()
-    if found is None:
-        return None
-    path, size = found
-    try:
-        font = ImageFont.truetype(path, size)
-    except OSError:
-        return None
-    _EMOJI_TILE_CACHE["font"] = font
-    return font
-
-
-def _render_emoji_tile(char: str, target_size: int) -> Image.Image | None:
-    font = _get_native_emoji_font()
-    if font is None:
-        return None
-
-    probe = Image.new("RGBA", (font.size * 2, font.size * 2), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(probe)
-    bbox = draw.textbbox((0, 0), char, font=font, embedded_color=True)
-    if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
-        return None  # глиф отсутствует даже в эмодзи-шрифте
-
-    draw.text((0, 0), char, font=font, embedded_color=True)
-    tile = probe.crop(bbox)
-
-    scale = target_size / max(tile.width, tile.height)
-    new_size = (max(1, int(tile.width * scale)), max(1, int(tile.height * scale)))
-    return tile.resize(new_size, Image.Resampling.LANCZOS)
 
 
 def _wrap_text_to_width(
@@ -169,7 +122,7 @@ def generate_cover(
     # 2. Ряд эмодзи (цветной шрифт, рендерится ОТДЕЛЬНО от текста).
     if extra_emojis:
         try:
-            emoji_tiles = [_render_emoji_tile(ch, style.emoji_size) for ch in extra_emojis]
+            emoji_tiles = [render_emoji_tile(ch, style.emoji_size) for ch in extra_emojis]
             emoji_tiles = [t for t in emoji_tiles if t is not None]
 
             if emoji_tiles:

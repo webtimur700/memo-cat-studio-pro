@@ -136,32 +136,11 @@ def render_banner_on_frame(
     )
     panel_frame = render_glass_panel_on_frame(frame, shifted_rect, style)
 
-    # Текст плашки — рисуется поверх панели, с тем же альфа-множителем opacity.
-    # ЧЕСТНОЕ ОГРАНИЧЕНИЕ (пойманное визуальным тестом): в отличие от обложки
-    # (effects/cover_generator.py), здесь эмодзи не рендерятся отдельным
-    # цветным шрифтом построчно-инлайн — это потребовало бы полноценного
-    # текстового шейпинга смешанных шрифтов на маленьком кегле. Пока эмодзи
-    # аккуратно вырезаются из строк плашки (не показываем "битые" tofu-глифы),
-    # а не рендерим как попало.
-    from effects.font_utils import is_emoji
+    # Текст плашки — поверх панели, с тем же множителем opacity; эмодзи (💼 💰) рисуются
+    # цветными тайлами прямо в строке (effects/banner_text.py), кегль подбирается под ширину.
+    from effects.banner_text import draw_banner_text
 
     text_layer = Image.new("RGBA", panel_frame.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(text_layer)
-    clean_lines = ["".join(ch for ch in line if not is_emoji(ch)).strip() for line in text_lines]
-    joined_text = " ".join(clean_lines)
-    font_path = resolve_font_path(joined_text, [], DEFAULT_FALLBACK_FONT)
-    font = ImageFont.truetype(font_path, font_size)
-
-    line_spacing = int(font_size * 0.3)
-    line_heights = [draw.textbbox((0, 0), line, font=font)[3] for line in clean_lines]
-    total_height = sum(line_heights) + line_spacing * max(0, len(clean_lines) - 1)
-    y_cursor = shifted_rect[1] + ((shifted_rect[3] - shifted_rect[1]) - total_height) // 2
-
-    for line, line_height in zip(clean_lines, line_heights):
-        line_width = draw.textbbox((0, 0), line, font=font)[2]
-        x = shifted_rect[0] + ((shifted_rect[2] - shifted_rect[0]) - line_width) // 2
-        alpha = int(255 * state.opacity)
-        draw.text((x, y_cursor), line, font=font, fill=(255, 255, 255, alpha))
-        y_cursor += line_height + line_spacing
+    draw_banner_text(text_layer, shifted_rect, text_lines, state.opacity, start_font_size=font_size)
 
     return Image.alpha_composite(panel_frame, text_layer)

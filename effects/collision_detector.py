@@ -65,7 +65,19 @@ def compute_banner_rect(
     banner_width: int,
     banner_height: int,
     margin: int = 40,
+    bounds: BoundingBox | None = None,
 ) -> BoundingBox:
+    """Прямоугольник плашки в заданной позиции. bounds — область, внутри которой
+    плашка должна остаться (безопасная зона Shorts); тогда позиции считаются от
+    её границ (margin в этом случае не применяется), а не от краёв кадра."""
+    if bounds is not None:
+        inner = compute_banner_rect(
+            position, int(bounds.width), int(bounds.height), min(banner_width, int(bounds.width)),
+            min(banner_height, int(bounds.height)), margin=0,
+        )
+        return BoundingBox(
+            x1=bounds.x1 + inner.x1, y1=bounds.y1 + inner.y1, x2=bounds.x1 + inner.x2, y2=bounds.y1 + inner.y2
+        )
     if position in (BannerPosition.BOTTOM_LEFT, BannerPosition.TOP_LEFT):
         x1 = margin
     elif position in (BannerPosition.BOTTOM_RIGHT, BannerPosition.TOP_RIGHT):
@@ -123,6 +135,7 @@ def resolve_banner_position_over_time(
     frame_height: int,
     banner_width: int,
     banner_height: int,
+    bounds: BoundingBox | None = None,
 ) -> CollisionResolution:
     """Позиция плашки на ВЕСЬ период показа: obstacles — зоны, которые нельзя
     закрывать (голова животного в разные моменты показа, логотип, кнопка).
@@ -136,7 +149,7 @@ def resolve_banner_position_over_time(
     best: tuple[float, int, BannerPosition, BoundingBox] | None = None
 
     for index, position in enumerate(candidates):
-        rect = compute_banner_rect(position, frame_width, frame_height, banner_width, banner_height)
+        rect = compute_banner_rect(position, frame_width, frame_height, banner_width, banner_height, bounds=bounds)
         worst = max((_overlap_area_ratio(rect, zone) for zone in obstacles), default=0.0)
         if worst < MIN_OVERLAP_AREA_RATIO_FOR_COLLISION:
             return CollisionResolution(position, rect, was_repositioned=index > 0)
