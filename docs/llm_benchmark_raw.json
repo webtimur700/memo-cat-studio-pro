@@ -662,5 +662,263 @@
       "peak_gtt_mib": 9459,
       "peak_vram_mib": 486
     }
+  },
+  "qwen/qwen3.8-27b": {
+    "cases": {
+      "none|m150": {
+        "steps": {
+          "titles": {
+            "sec": 55.5,
+            "completion_tokens": 151,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 25.2,
+            "completion_tokens": 60,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 56.0,
+            "completion_tokens": 106,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 136.7,
+        "outputs": {
+          "titles": [
+            "Пёс украл съёмку! 🎥😂",
+            "Ошибка в тексте? Смех до слёз 💀",
+            "Редактор: «Я это не писал» 🤯",
+            "Самый смешной фейл монтажа",
+            "Пёс vs Субтитры: кто победил?",
+            "Хозяин не ожидал такого конца 😭",
+            "Когда пёс решает стать режиссёром 🐶",
+            "Это не баг, а фича! 😂",
+            "Пёс испортит ваш день (в хорошем смысле)",
+            "Смешнее, чем в кино! 🍿"
+          ],
+          "description": "Забавный момент с животными, который не оставит равнодушным. Смешной клип для быстрого просмотра и поднятия настроения. Идеально для фанатов милых видео и коротких развлечений. Смотрите до конца, чтобы поймать лучшую реакцию!",
+          "hashtags": [
+            "#animals",
+            "#funnyanimals",
+            "#animalshorts",
+            "#pets",
+            "#catlife",
+            "#doglife",
+            "#wildlife",
+            "#nature",
+            "#cuteanimals",
+            "#animalfails",
+            "#funnypets",
+            "#viralanimals",
+            "#shorts",
+            "#youtubeshorts",
+            "#trending",
+            "#fyp",
+            "#explore",
+            "#animalsloved",
+            "#petlovers",
+            "#catsofinstagram",
+            "#dogsofinstagram",
+            "#wildlifeconservation",
+            "#animalrescue",
+            "#funnyvideo",
+            "#laugh",
+            "#comedy",
+            "#animalsbeinganimals",
+            "#petmemes",
+            "#zoofriends"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 40,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 0.99,
+          "description_len": 225,
+          "hashtags_count": 29,
+          "hashtags_ok": true
+        }
+      },
+      "none|m210": {
+        "steps": {
+          "titles": {
+            "sec": 61.1,
+            "completion_tokens": 132,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 21.1,
+            "completion_tokens": 68,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 35.9,
+            "completion_tokens": 106,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 118.2,
+        "outputs": {
+          "titles": [
+            "Кошка нашла ХАК в реальности 😱",
+            "Слышал этот ЗВУК? Это паника!",
+            "Они думали, что это шутка 😂",
+            "Гябра! Лучшая реакция года",
+            "Кошки: мы не злые, мы... ЭТО",
+            "5 секунд чистого хаоса 🐈",
+            "Этот звук невозможно объяснить",
+            "Они испугались своего же голоса",
+            "POV: Ты зашел в комнату и...",
+            "Животные говорят то, что мы боимся"
+          ],
+          "description": "Смешное видео с животными, которое заставит вас улыбнуться. Забавный момент с неожиданным поведением питомца и забавными звуками. Идеальное короткое развлечение для всех, кто любит юмор и природу. Смотрите до конца, чтобы поймать самое смешное.",
+          "hashtags": [
+            "#funny",
+            "#animals",
+            "#pets",
+            "#cat",
+            "#dog",
+            "#cute",
+            "#funnyanimals",
+            "#animalshorts",
+            "#shorts",
+            "#viral",
+            "#trending",
+            "#catsoftiktok",
+            "#dogsoftiktok",
+            "#funnyfails",
+            "#animalfails",
+            "#cuteanimals",
+            "#funnymoments",
+            "#petlovers",
+            "#animallover",
+            "#wholesome",
+            "#funnypets",
+            "#animalcomedy",
+            "#petscomedy",
+            "#shortsfeed",
+            "#youtubeshorts",
+            "#funnyvideos",
+            "#animalvideos",
+            "#catvideos",
+            "#dogvideos",
+            "#gag"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 34,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 0.99,
+          "description_len": 244,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      },
+      "none|m990": {
+        "steps": {
+          "titles": {
+            "sec": 47.7,
+            "completion_tokens": 150,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "description": {
+            "sec": 32.7,
+            "completion_tokens": 79,
+            "reasoning_tokens": 0,
+            "error": null
+          },
+          "hashtags": {
+            "sec": 38.8,
+            "completion_tokens": 109,
+            "reasoning_tokens": 0,
+            "error": null
+          }
+        },
+        "total_sec": 119.3,
+        "outputs": {
+          "titles": [
+            "Они ВСЕЕ не спят?! 😱 #funny",
+            "Коты: мы тут работаем, ты спи 😂",
+            "Самый честный ответ про сон 🐱",
+            "Только ты?\" — это больно 🥺",
+            "Они не спят, а вы? 😤 #pets",
+            "Мгновение, когда всё рухнуло 💥",
+            "Коты vs Сон: кто победил? 🏆",
+            "Они не спят... а вы? 🤔",
+            "Ловим момент: они не спят 📸",
+            "Это не бежим\" — смысл жизни 🐶"
+          ],
+          "description": "Забавный момент с домашними питомцами, которые решили, что бег — это лучший способ общения. Смотри на их реакцию и пойми, почему эти животные всегда знают, куда бежать. Идеальный ролик для тех, кто любит смешные видео с животными. Подпишись, чтобы не пропустить новые милые моменты из жизни четвероногих друзей.",
+          "hashtags": [
+            "#animals",
+            "#pets",
+            "#funny",
+            "#shorts",
+            "#youtubeshorts",
+            "#cute",
+            "#cat",
+            "#dog",
+            "#catsoftiktok",
+            "#catfails",
+            "#funnyanimals",
+            "#petsofinstagram",
+            "#animallovers",
+            "#comedy",
+            "#viral",
+            "#trending",
+            "#fyp",
+            "#exploremore",
+            "#random",
+            "#funnyvideos",
+            "#animalmemes",
+            "#petlife",
+            "#wholesome",
+            "#dailydoseofcuteness",
+            "#animalshorts",
+            "#petstagram",
+            "#funnycats",
+            "#funnydogs",
+            "#animalsbeingsmug",
+            "#petfails"
+          ]
+        },
+        "metrics": {
+          "titles_count": 10,
+          "titles_exactly_10": true,
+          "titles_max_len": 31,
+          "titles_over_60": 0,
+          "titles_unique": 10,
+          "titles_cyrillic_ratio": 0.94,
+          "description_len": 311,
+          "hashtags_count": 30,
+          "hashtags_ok": true
+        }
+      }
+    },
+    "load": {
+      "load_sec": 54.8,
+      "context_length": 16384,
+      "available_drop_mib": 10936,
+      "gtt_delta_mib": 9303,
+      "size_gib": 16.5
+    },
+    "run_memory": {
+      "peak_available_drop_mib": 13571,
+      "peak_gtt_mib": 10543,
+      "peak_vram_mib": 501
+    }
   }
 }

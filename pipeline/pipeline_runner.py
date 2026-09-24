@@ -54,6 +54,8 @@ from vision.tracker import ObjectTracker
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WINDOW_SEC = 5.0
+MIN_PAUSE_SEC = 0.35          # промежуток между словами, считающийся паузой (можно резать)
+SPEECH_EDGE_MARGIN_SEC = 0.15
 SAMPLE_FPS_SCAN = 1.0     # частота сэмплирования при поиске моментов
 SAMPLE_FPS_CROP = 2.0     # частота сэмплирования при кадрировании внутри момента
 MOTION_NORMALIZATION = 25.0  # эмпирический делитель для перевода средней разницы яркости в 0..1
@@ -137,6 +139,9 @@ class PipelineRunner:
         self._llm_provider = llm_provider
         self._transcriber = None  # создаётся на каждый process_video
         self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
+        # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
+        # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
+        self._word_cache: list[tuple[float, float, list[WordTiming]]] = []
 
     def process_video(
         self,
@@ -150,6 +155,7 @@ class PipelineRunner:
 
         self._transcriber = None
         self._llm_unavailable = False
+        self._word_cache = []
         emit("analyzing")
         source = IngestionService().ingest(video_path)
         detector = _try_load_yolo(self._models_dir)
@@ -159,7 +165,16 @@ class PipelineRunner:
         window_scores = self._scan_windows(video_path, source.duration_sec, detector, scenes)
 
         emit("cutting")
-        moments = select_moments(window_scores, settings, source.duration_sec)
+        scene_boundaries = sorted(
+            {s.start_sec for s in scenes if s.start_sec > 0} | {s.end_sec for s in scenes if s.end_sec < source.duration_sec}
+        )
+        moments = select_moments(
+            window_scores,
+            settings,
+            source.duration_sec,
+            scene_boundaries=scene_boundaries,
+            pause_finder=lambda lo, hi: self._find_speech_pauses(video_path, lo, hi, settings),
+        )
         emit("cutting", moments_found=len(moments))
 
         if not moments:
@@ -200,6 +215,8 @@ class PipelineRunner:
             window_start = 0.0
             while window_start < duration_sec:
                 window_end = min(window_start + WINDOW_SEC, duration_sec)
+                if window_end - window_start < 1.0 and results:
+                    break  # хвост короче секунды (например 180.0-180.02) — не окно
 
                 prev_gray: np.ndarray | None = None
                 motion_samples: list[float] = []
@@ -503,25 +520,56 @@ class PipelineRunner:
             )
         return self._transcriber
 
-    def _transcribe_moment(self, video_path: Path, moment: Moment, settings: UserSettings) -> list[WordTiming]:
-        """Слова момента с таймингами ОТНОСИТЕЛЬНО начала момента. Транскрибируется
-        только звук самого момента (15-60 с), а не всего видео. При любой
-        проблеме возвращает [] и пишет warning — пайплайн идёт дальше без субтитров.
+    def _transcribe_range(self, video_path: Path, start: float, end: float, settings: UserSettings) -> list[WordTiming]:
+        """Слова диапазона [start, end] с АБСОЛЮТНЫМИ таймкодами. Транскрибируется
+        только звук диапазона; результат кэшируется на время обработки видео. При
+        любой проблеме возвращает [] и пишет warning — пайплайн идёт дальше.
         """
-        audio_path = self._output_dir / f"_tmp_audio_{video_path.stem}_{int(moment.start_sec)}.wav"
+        for cache_start, cache_end, cached in self._word_cache:
+            if cache_start <= start + 0.01 and cache_end >= end - 0.01:
+                return [w for w in cached if w.end_sec > start and w.start_sec < end]
+
+        audio_path = self._output_dir / f"_tmp_audio_{video_path.stem}_{int(start * 1000)}.wav"
         try:
-            FFmpegWrapper().extract_audio_track(
-                video_path, audio_path, start_sec=moment.start_sec, duration_sec=moment.duration_sec
-            )
-            return self._get_transcriber(settings).transcribe(audio_path)
+            FFmpegWrapper().extract_audio_track(video_path, audio_path, start_sec=start, duration_sec=end - start)
+            relative = self._get_transcriber(settings).transcribe(audio_path)
         except Exception as exc:
             logger.warning(
-                "Транскрипция недоступна для момента {:.1f}s видео {}: {} — без субтитров и без текста для LLM",
-                moment.start_sec, video_path.name, exc,
+                "Транскрипция недоступна для {:.1f}-{:.1f}s видео {}: {} — без субтитров и без текста для LLM",
+                start, end, video_path.name, exc,
             )
             return []
         finally:
             audio_path.unlink(missing_ok=True)
+
+        absolute = [WordTiming(w.text, w.start_sec + start, w.end_sec + start) for w in relative]
+        self._word_cache.append((start, end, absolute))
+        return absolute
+
+    def _transcribe_moment(self, video_path: Path, moment: Moment, settings: UserSettings) -> list[WordTiming]:
+        """Слова момента с таймингами ОТНОСИТЕЛЬНО начала момента. Транскрибируется
+        только звук самого момента (или берётся из кэша уже транскрибированного диапазона)."""
+        words = self._transcribe_range(video_path, moment.start_sec, moment.end_sec, settings)
+        return [
+            WordTiming(w.text, max(0.0, w.start_sec - moment.start_sec), min(moment.duration_sec, w.end_sec - moment.start_sec))
+            for w in words
+            if moment.start_sec - 0.01 <= w.start_sec < moment.end_sec
+        ]
+
+    def _find_speech_pauses(self, video_path: Path, start: float, end: float, settings: UserSettings) -> list[float]:
+        """Моменты пауз речи в диапазоне: середины промежутков между словами
+        (>= MIN_PAUSE_SEC) и края речи. Граница клипа в такой точке не режет фразу."""
+        words = self._transcribe_range(video_path, start, end, settings)
+        if not words:
+            return []
+        pauses = [
+            (prev.end_sec + nxt.start_sec) / 2
+            for prev, nxt in zip(words, words[1:])
+            if nxt.start_sec - prev.end_sec >= MIN_PAUSE_SEC
+        ]
+        pauses.append(max(start, words[0].start_sec - SPEECH_EDGE_MARGIN_SEC))
+        pauses.append(min(end, words[-1].end_sec + SPEECH_EDGE_MARGIN_SEC))
+        return pauses
 
     def _write_subtitles(
         self, video_path: Path, moment: Moment, words: list[WordTiming], settings: UserSettings

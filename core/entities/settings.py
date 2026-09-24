@@ -20,11 +20,15 @@ class ShortsSettings:
     min_duration_sec: int = 15
     max_duration_sec: int = 60
     boundary_padding_ms: int = 250
+    max_moments: int = 10
+    max_coverage_ratio: float = 0.35     # клипы вместе — не больше этой доли исходного видео
+    snap_tolerance_sec: float = 6.0      # на сколько границу можно сдвинуть к паузе речи / смене сцены
 
 
 @dataclass(frozen=True, slots=True)
 class ViralScoreSettings:
-    queue_threshold: int = 55
+    queue_threshold: int = 55            # абсолютный минимум: окна ниже него не берутся никогда
+    relative_top_ratio: float = 0.40     # и берутся только лучшие 40% окон САМОГО видео
     weight_motion_intensity: float = 0.30
     weight_scene_change: float = 0.15
     weight_audio_event: float = 0.25
@@ -111,9 +115,13 @@ class UserSettings:
                 min_duration_sec=shorts_raw.get("min_duration_sec", 15),
                 max_duration_sec=shorts_raw.get("max_duration_sec", 60),
                 boundary_padding_ms=shorts_raw.get("boundary_padding_ms", 250),
+                max_moments=shorts_raw.get("max_moments", 10),
+                max_coverage_ratio=shorts_raw.get("max_coverage_ratio", 0.35),
+                snap_tolerance_sec=shorts_raw.get("snap_tolerance_sec", 6.0),
             ),
             viral_score=ViralScoreSettings(
                 queue_threshold=viral_raw.get("queue_threshold", 55),
+                relative_top_ratio=viral_raw.get("relative_top_ratio", 0.40),
                 weight_motion_intensity=weights_raw.get("motion_intensity", 0.30),
                 weight_scene_change=weights_raw.get("scene_change", 0.15),
                 weight_audio_event=weights_raw.get("audio_event", 0.25),

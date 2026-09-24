@@ -9,11 +9,15 @@ shorts:
   min_duration_sec: 15
   max_duration_sec: 60
   boundary_padding_ms: 250   # запас на "интеллектуальный" старт/конец, чтобы не резать на полуслове
+  max_moments: 10
+  max_coverage_ratio: 0.35   # все клипы вместе — не больше 35% исходного видео
+  snap_tolerance_sec: 6.0    # границы клипа подтягиваются к паузе речи / смене сцены в пределах этого окна
 
 viral_score:
   # Формула считается в scoring/strategies/default_strategy.py.
   # Порог ниже которого момент НЕ попадает в очередь нарезки (Функция: "если выше порога").
-  queue_threshold: 55
+  queue_threshold: 55        # абсолютный минимум: окна ниже него не берутся никогда
+  relative_top_ratio: 0.40   # дополнительно берутся только лучшие 40% окон самого видео
   weights:
     motion_intensity: 0.30
     scene_change: 0.15
