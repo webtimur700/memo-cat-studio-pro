@@ -2,10 +2,9 @@
 
 Собирает боковую навигацию + QStackedWidget с экранами (Проекты, Редактор,
 Очередь, Настройки), подключает тёмную тему и связывает сигналы между
-экранами. Application-сервисы (video/vision/llm и т.д. из Шагов 5-9) будут
-инжектироваться сюда через core/container.py — в этом виджете уже заложены
-точки подключения (см. _wire_pipeline_signals), чтобы не переписывать UI
-заново, когда появится реальный pipeline.
+экранами. Добавление видео в "Проекты" запускает pipeline/pipeline_runner.py
+в фоновом QThread (ui/pipeline_worker.py) — прогресс приходит обратно через
+Qt-сигналы и обновляет вкладку "Очередь" в реальном времени.
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.entities.settings import UserSettings
+from ui.pipeline_worker import PipelineWorker
 from ui.views.batch_queue_view import BatchQueueView, JobStage
 from ui.views.project_view import ProjectView
 from ui.views.preview_player import PreviewPlayer
@@ -34,6 +34,8 @@ from ui.views.settings_view import SettingsView
 from ui.views.timeline_view import TimelineMoment, TimelineView
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MODELS_DIR = PROJECT_ROOT / "models"
+EXPORT_OUTPUT_DIR = PROJECT_ROOT / "export" / "output"
 
 
 class EditorView(QWidget):
@@ -64,6 +66,7 @@ class MainWindow(QMainWindow):
 
         settings_path = PROJECT_ROOT / "config" / "default_settings.yaml"
         self._settings = UserSettings.load_from_yaml(settings_path)
+        self._workers: dict[str, PipelineWorker] = {}
 
         central = QWidget()
         central.setObjectName("centralWidget")
@@ -114,21 +117,30 @@ class MainWindow(QMainWindow):
         return sidebar, group
 
     def _wire_pipeline_signals(self) -> None:
-        """Точка подключения будущего pipeline (Шаги 5-9).
-
-        Пока Application-сервисы ещё не реализованы, сигнал добавления видео
-        уже создаёт реальную запись в очереди пакетной обработки — это не
-        имитация, а рабочая связь UI-компонентов между собой, на которую
-        позже просто "навесится" реальный pipeline_runner.py вместо
-        сгенерированного здесь job_id.
-        """
-
         def on_videos_added(paths: list[Path]) -> None:
             for path in paths:
-                job_id = f"job_{abs(hash(str(path)))}"
+                job_id = f"job_{abs(hash(str(path)))}_{len(self._workers)}"
                 self.batch_view.add_job(job_id, path.name)
                 self.batch_view.update_progress(job_id, JobStage.QUEUED)
-                logger.info("Видео добавлено в очередь: {}", path)
+
+                worker = PipelineWorker(
+                    job_id=job_id,
+                    video_path=path,
+                    settings=self._settings,
+                    models_dir=MODELS_DIR,
+                    output_dir=EXPORT_OUTPUT_DIR,
+                    parent=self,
+                )
+                worker.stage_changed.connect(self._on_pipeline_stage_changed)
+                worker.job_finished.connect(self._on_pipeline_finished)
+                worker.job_failed.connect(self._on_pipeline_failed)
+                # QThread уничтожается Python-сборщиком мусора, если на него
+                # не держать ссылку — реальный, часто встречающийся баг в
+                # PySide6/PyQt. Держим воркер в self._workers до завершения.
+                self._workers[job_id] = worker
+                worker.start()
+
+                logger.info("Пайплайн запущен для видео: {}", path)
 
         self.project_view.videos_added.connect(on_videos_added)
 
@@ -141,6 +153,36 @@ class MainWindow(QMainWindow):
             )
 
         self.settings_view.settings_saved.connect(on_settings_saved)
+
+    def _on_pipeline_stage_changed(self, job_id: str, stage: str, data: dict) -> None:
+        stage_map = {
+            "analyzing": JobStage.ANALYZING,
+            "scoring": JobStage.SCORING,
+            "cutting": JobStage.CUTTING,
+            "reframing": JobStage.REFRAMING,
+            "done": JobStage.DONE,
+        }
+        job_stage = stage_map.get(stage)
+        if job_stage is None:
+            return
+        moments_found = data.get("moments_found")
+        self.batch_view.update_progress(job_id, job_stage, moments_found=moments_found)
+
+    def _on_pipeline_finished(self, job_id: str, clips: list) -> None:
+        self.batch_view.update_progress(job_id, JobStage.DONE, moments_found=len(clips))
+        logger.info("Готово: {} клип(ов) для job {}", len(clips), job_id)
+        if clips:
+            durations = [f"{c.moment.start_sec:.0f}-{c.moment.end_sec:.0f}s (score {c.moment.viral_score})" for c in clips]
+            self.editor_view.timeline.set_moments(
+                [TimelineMoment(c.moment.start_sec, c.moment.end_sec, c.moment.viral_score, c.title) for c in clips],
+                total_duration_sec=max(c.moment.end_sec for c in clips),
+            )
+            logger.info("Найденные моменты: {}", ", ".join(durations))
+        self._workers.pop(job_id, None)
+
+    def _on_pipeline_failed(self, job_id: str, error_message: str) -> None:
+        self.batch_view.mark_failed(job_id, error_message)
+        self._workers.pop(job_id, None)
 
     def load_demo_timeline(self) -> None:
         """Вспомогательный метод для ручной проверки timeline_view без

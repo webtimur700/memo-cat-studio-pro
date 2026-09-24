@@ -80,7 +80,7 @@ fi
 # ------------------------------------------------------------
 log "Устанавливаю системные зависимости (ffmpeg, Python 3.12, Vulkan/VAAPI, Qt6)"
 sudo dnf install -y \
-    ffmpeg ffmpeg-libs \
+    ffmpeg ffmpeg-libs libatomic \
     python3.12 python3.12-devel python3-pip \
     libva libva-utils \
     vulkan-tools mesa-vulkan-drivers mesa-va-drivers \

@@ -42,8 +42,8 @@ from export.dynamic_crop import CropSample, build_dynamic_crop_filter
 from export.quality_presets import resolve_quality_preset
 
 
-def _run(command: list[str]) -> None:
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+def _run(command: list[str], cwd: Path | None = None) -> None:
+    result = subprocess.run(command, capture_output=True, text=True, check=False, cwd=cwd)
     if result.returncode != 0:
         raise FFmpegExecutionError(command, result.returncode, result.stderr)
 
@@ -108,6 +108,14 @@ class ExportPlan:
     banner_appear_at_sec: float
     banner_duration_sec: float
     settings: ExportSettings
+    source_start_sec: float = 0.0
+    """Абсолютное время начала момента в ИСХОДНОМ видео (секунды).
+
+    crop_samples[i].timestamp_sec отсчитывается от начала МОМЕНТА (0-based) —
+    без -ss на этот сдвиг ffmpeg декодировал бы всегда с начала исходного
+    файла, независимо от того, где реально находится момент. Раньше это
+    поле отсутствовало вовсе (баг, найденный по логам реального запуска:
+    все клипы падали на экспорте / брали не тот участок видео)."""
 
 
 class ExportService:
@@ -123,11 +131,17 @@ class ExportService:
         scale_filter = f"scale={plan.settings.width}:{plan.settings.height}"
         video_filters = [crop_filter, scale_filter]
 
+        # ffmpeg-фильтрграф — своя мини-грамматика (двоеточия, запятые,
+        # квадратные скобки — служебные символы), и экранирование пути внутри
+        # неё исторически хрупкое и по-разному ведёт себя на разных сборках
+        # ffmpeg. Самый надёжный способ передать путь с субтитрами — вообще
+        # не класть его в строку фильтра: запускаем ffmpeg с cwd=папка ass-
+        # файла и передаём в фильтр только голое имя файла, без единого
+        # спецсимвола пути.
+        ass_cwd: Path | None = None
         if plan.subtitle_ass_path is not None:
-            # ASS-путь экранируется на случай спецсимволов Windows-style путей;
-            # на Linux достаточно обернуть в кавычки и экранировать двоеточие.
-            escaped_path = str(plan.subtitle_ass_path).replace(":", r"\:")
-            video_filters.append(f"ass='{escaped_path}'")
+            ass_cwd = plan.subtitle_ass_path.parent
+            video_filters.append(f"ass={plan.subtitle_ass_path.name}")
 
         filter_chain = ",".join(video_filters)
 
@@ -137,7 +151,8 @@ class ExportService:
 
             base_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", str(plan.source_path),
+                "-ss", f"{plan.source_start_sec:.3f}",
+                "-i", str(plan.source_path.resolve()),
                 "-t", f"{clip_duration:.3f}",
                 "-vf", filter_chain,
                 "-r", str(plan.settings.fps),
@@ -147,10 +162,11 @@ class ExportService:
                 "-c:a", plan.settings.codec_audio,
                 "-b:a", f"{quality.audio_bitrate_kbps}k",
                 "-movflags", "+faststart",
-                str(base_output),
+                str(base_output.resolve()),
             ]
             logger.info("Экспорт клипа (база: crop+scale+субтитры): {}", plan.output_path.name)
-            _run(base_cmd)
+            logger.debug("ffmpeg filter_chain: {}", filter_chain)
+            _run(base_cmd, cwd=ass_cwd)
 
             if plan.banner_rect is None:
                 shutil.copy(base_output, plan.output_path)

@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import subprocess
 from functools import lru_cache
+from pathlib import Path
 
 from fontTools.ttLib import TTFont
 
@@ -65,8 +67,40 @@ def resolve_font_path(text: str, candidates: list[str], fallback: str) -> str:
     return fallback
 
 
-# DejaVu Sans Bold — практически гарантированно предустановлен на любом Linux
-# (в т.ч. внутри distrobox-образов Fedora) и покрывает кириллицу+латиницу+
-# базовую пунктуацию — безопасный fallback последней инстанции.
-DEFAULT_FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-DEFAULT_EMOJI_FONT = "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"
+def _fc_match(pattern: str) -> str | None:
+    """Путь к шрифту по fontconfig-паттерну (переносимо между дистрибутивами:
+    в Fedora нет /usr/share/fonts/truetype/dejavu/, как в Debian)."""
+    try:
+        result = subprocess.run(
+            ["fc-match", "-f", "%{file}", pattern], capture_output=True, text=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = result.stdout.strip()
+    return path if path and Path(path).is_file() else None
+
+
+def _first_existing(paths: list[str], fc_pattern: str) -> str:
+    for path in paths:
+        if Path(path).is_file():
+            return path
+    return _fc_match(fc_pattern) or paths[0]
+
+
+# Bold-шрифт с кириллицей+латиницей: известные пути Debian/Fedora, затем fontconfig.
+DEFAULT_FALLBACK_FONT = _first_existing(
+    [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    ],
+    "sans-serif:bold",
+)
+DEFAULT_EMOJI_FONT = _first_existing(
+    [
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/google-noto-color-emoji-fonts/Noto-COLRv1.ttf",
+        "/usr/share/fonts/google-noto-emoji-color-fonts/NotoColorEmoji.ttf",
+    ],
+    "Noto Color Emoji",
+)

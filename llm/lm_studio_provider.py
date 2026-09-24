@@ -20,6 +20,11 @@ from loguru import logger
 from core.exceptions import MemoCatError
 from core.interfaces.llm_provider import LLMProvider
 
+# LM Studio — локальный сервер: ходим к нему напрямую, минуя системный прокси.
+# urllib не понимает CIDR в no_proxy (например 127.0.0.0/8), из-за чего запросы
+# к 127.0.0.1 уходили бы в http_proxy и получали 503.
+_LOCAL_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
 
 class LLMRequestError(MemoCatError):
     pass
@@ -40,7 +45,7 @@ class LMStudioProvider(LLMProvider):
         url = f"{self._config.base_url}/models"
         try:
             request = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(request, timeout=self._config.timeout_sec) as response:
+            with _LOCAL_OPENER.open(request, timeout=self._config.timeout_sec) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError) as exc:
             raise LLMRequestError(
@@ -84,7 +89,7 @@ class LMStudioProvider(LLMProvider):
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=self._config.timeout_sec) as response:
+            with _LOCAL_OPENER.open(request, timeout=self._config.timeout_sec) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError) as exc:
             raise LLMRequestError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc

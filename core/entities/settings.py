@@ -57,6 +57,11 @@ class BrandingSettings:
     logo_position: str = "top_right"
     subscribe_button_enabled: bool = True
     collision_avoidance: bool = True
+    banner_text_lines: tuple[str, ...] = (
+        "💼 100zarplat.ru",
+        "Подбор вакансий от проверенных работодателей",
+        "💰 Ежедневные и еженедельные выплаты",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +143,16 @@ class UserSettings:
                 ),
                 collision_avoidance=branding_raw.get("banner", {}).get(
                     "collision_avoidance", True
+                ),
+                banner_text_lines=tuple(
+                    branding_raw.get("banner", {}).get(
+                        "text_lines",
+                        [
+                            "💼 100zarplat.ru",
+                            "Подбор вакансий от проверенных работодателей",
+                            "💰 Ежедневные и еженедельные выплаты",
+                        ],
+                    )
                 ),
             ),
             export=ExportSettings(
