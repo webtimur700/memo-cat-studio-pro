@@ -23,16 +23,14 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from effects.font_utils import (
-    DEFAULT_EMOJI_FONT,
     DEFAULT_FALLBACK_FONT,
+    find_emoji_font,
     is_emoji,
+    preferred_title_fonts,
     resolve_font_path,
 )
 
-PREFERRED_TITLE_FONTS = [
-    "/usr/share/fonts/truetype/google-fonts/Poppins-Bold.ttf",
-    "/usr/share/fonts/truetype/google-fonts/Montserrat-Bold.ttf",
-]
+PREFERRED_TITLE_FONTS = preferred_title_fonts()
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,14 +71,18 @@ def _get_native_emoji_font() -> ImageFont.FreeTypeFont | None:
     if "font" in _EMOJI_TILE_CACHE:
         return _EMOJI_TILE_CACHE["font"]  # type: ignore[return-value]
 
-    for candidate_size in (109, 96, 128, 72):
-        try:
-            font = ImageFont.truetype(DEFAULT_EMOJI_FONT, candidate_size)
-            _EMOJI_TILE_CACHE["font"] = font
-            return font
-        except OSError:
-            continue
-    return None
+    # find_emoji_font() принимает шрифт только после пробного рендера: системный
+    # Noto Color Emoji на Fedora — COLRv1, Pillow его открывает, но рисует пустоту.
+    found = find_emoji_font()
+    if found is None:
+        return None
+    path, size = found
+    try:
+        font = ImageFont.truetype(path, size)
+    except OSError:
+        return None
+    _EMOJI_TILE_CACHE["font"] = font
+    return font
 
 
 def _render_emoji_tile(char: str, target_size: int) -> Image.Image | None:

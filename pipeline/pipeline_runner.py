@@ -35,6 +35,7 @@ from core.entities.settings import UserSettings, ViralScoreSettings
 from core.exceptions import MemoCatError
 from core.entities.subtitle import WordTiming
 from cutting.clip_selector_service import WindowScore, select_moments
+from effects.cover_generator import generate_cover
 from effects.collision_detector import BannerPosition, resolve_banner_position
 from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
@@ -276,7 +277,10 @@ class PipelineRunner:
         transcript = " ".join(w.text for w in words)
         content = self._generate_content(transcript)
         title = content.titles[0] if content.titles else self._default_title(moment)
-        metadata_path = self._write_metadata(output_path, video_path, moment, transcript, title, content)
+        cover_path = self._generate_cover(video_path, moment, crop_samples, title, output_path, settings)
+        metadata_path = self._write_metadata(
+            output_path, video_path, moment, transcript, title, content, cover_path
+        )
 
         return Clip(
             moment=moment,
@@ -287,6 +291,7 @@ class PipelineRunner:
             titles=content.titles,
             transcript=transcript,
             metadata_path=metadata_path,
+            cover_path=cover_path,
         )
 
     # ------------------------------------------------------------------
@@ -306,13 +311,58 @@ class PipelineRunner:
     def _default_title(moment: Moment) -> str:
         return f"Момент {moment.start_sec:.0f}s (score {moment.viral_score})"
 
+    def _generate_cover(
+        self,
+        video_path: Path,
+        moment: Moment,
+        crop_samples: list[CropSample],
+        title: str,
+        output_path: Path,
+        settings: UserSettings,
+    ) -> Path | None:
+        """<имя_клипа>_cover.png: самый резкий кадр момента, обрезанный тем же
+        окном автокадрирования, что и в клипе (вертикаль 9:16), + заголовок.
+        Любой сбой — warning и клип без обложки, пайплайн не падает.
+        """
+        cover_path = output_path.with_name(f"{output_path.stem}_cover.png")
+        try:
+            with FrameExtractor(video_path) as extractor:
+                timestamp, frame = extractor.best_frame_for_cover(moment.start_sec, moment.end_sec)
+
+            relative_t = timestamp - moment.start_sec
+            nearest = min(crop_samples, key=lambda cs: abs(cs.timestamp_sec - relative_t))
+            height, width = frame.shape[:2]
+            window = nearest.window
+            x1, x2 = sorted((max(0, int(window.x1)), min(width, int(window.x2))))
+            y1, y2 = sorted((max(0, int(window.y1)), min(height, int(window.y2))))
+            if x2 - x1 > 1 and y2 - y1 > 1:
+                frame = frame[y1:y2, x1:x2]
+            frame = cv2.resize(
+                frame, (settings.export.width, settings.export.height), interpolation=cv2.INTER_CUBIC
+            )
+
+            cover = generate_cover(frame, title)
+            cover.convert("RGB").save(cover_path, format="PNG")
+            return cover_path
+        except Exception as exc:
+            logger.warning("Обложка для {} не создана: {}", output_path.name, exc)
+            return None
+
     def _write_metadata(
-        self, output_path: Path, video_path: Path, moment: Moment, transcript: str, title: str, content: ClipContent
+        self,
+        output_path: Path,
+        video_path: Path,
+        moment: Moment,
+        transcript: str,
+        title: str,
+        content: ClipContent,
+        cover_path: Path | None = None,
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
         payload = {
             "source_video": video_path.name,
             "clip_file": output_path.name,
+            "cover_file": cover_path.name if cover_path else None,
             "start_sec": moment.start_sec,
             "end_sec": moment.end_sec,
             "viral_score": moment.viral_score,
@@ -329,6 +379,70 @@ class PipelineRunner:
             logger.warning("Не удалось записать {}: {}", metadata_path.name, exc)
             return None
         return metadata_path
+
+    def _build_crop_samples(
+        self, video_path: Path, source, moment: Moment, detector: _DetectorHandle, settings: UserSettings
+    ) -> list[CropSample]:
+        planner = SmartCropPlanner(
+            source.width,
+            source.height,
+            smoothing_alpha=settings.reframe.tracking_smoothing_alpha,
+            min_subject_area_ratio=settings.reframe.min_subject_area_ratio,
+            max_zoom_factor=settings.reframe.max_zoom_factor,
+        )
+        tracker = ObjectTracker()
+        samples: list[CropSample] = []
+
+        with FrameExtractor(video_path) as extractor:
+            for timestamp, frame in extractor.frames_in_range(
+                moment.start_sec, moment.end_sec, sample_fps=SAMPLE_FPS_CROP
+            ):
+                relative_t = timestamp - moment.start_sec
+                detection = None
+
+                if detector.available:
+                    frame_detections = detector.detect(frame)
+                    retimed = [
+                        Detection(d.class_id, d.class_name, d.confidence, d.bbox, relative_t)
+                        for d in frame_detections
+                    ]
+                    tracker.update(retimed)
+                    primary = tracker.primary_track()
+                    if primary is not None:
+                        detection = primary.last_detection
+
+                window = planner.plan_frame(detection)
+                samples.append(
+                    CropSample(
+                        relative_t,
+                        CropWindow(window.x1, window.y1, window.x2, window.y2, window.zoom_factor, relative_t),
+                    )
+                )
+
+        if not samples:
+            # Гарантированный fallback, если не удалось прочитать ни одного
+            # кадра момента — статичный центральный кроп на весь момент.
+            center = SmartCropPlanner(source.width, source.height).plan_frame(None)
+            samples = [
+                CropSample(0.0, CropWindow(center.x1, center.y1, center.x2, center.y2, 1.0, 0.0)),
+                CropSample(
+                    moment.duration_sec,
+                    CropWindow(center.x1, center.y1, center.x2, center.y2, 1.0, moment.duration_sec),
+                ),
+            ]
+        elif samples[-1].timestamp_sec < moment.duration_sec - 1e-3:
+            # Сэмплы идут с шагом 1/SAMPLE_FPS_CROP, последний обычно не доходит до
+            # конца момента; длина клипа берётся из последнего сэмпла, поэтому
+            # без замыкающей точки клип получался бы короче момента.
+            last = samples[-1].window
+            samples.append(
+                CropSample(
+                    moment.duration_sec,
+                    CropWindow(last.x1, last.y1, last.x2, last.y2, last.zoom_factor, moment.duration_sec),
+                )
+            )
+
+        return samples
 
     def _get_transcriber(self, settings: UserSettings):
         """Один WhisperTranscriber на весь прогон видео: модель грузится в память
