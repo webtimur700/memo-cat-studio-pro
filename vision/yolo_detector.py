@@ -25,7 +25,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from core.entities.detection import BoundingBox, Detection
+from core.entities.detection import COCO_ANIMAL_NAMES, BoundingBox, Detection
 from core.exceptions import MemoCatError
 from vision.compute_backend import ComputeBackend
 
@@ -33,8 +33,7 @@ from vision.compute_backend import ComputeBackend
 # Ultralytics YOLO11, обученной на COCO — не обучаем свою модель с нуля).
 COCO_CLASS_NAMES: dict[int, str] = {
     0: "person",
-    15: "cat",
-    16: "dog",
+    **COCO_ANIMAL_NAMES,   # bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe
 }
 
 

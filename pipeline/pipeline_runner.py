@@ -28,7 +28,7 @@ import numpy as np
 from loguru import logger
 
 from core.entities.clip import Clip
-from core.entities.detection import Detection
+from core.entities.detection import BoundingBox, Detection, is_animal_class
 from core.entities.moment import Moment
 from core.entities.scene_segment import SceneSegment
 from core.entities.settings import UserSettings, ViralScoreSettings
@@ -37,7 +37,6 @@ from core.entities.subtitle import WordTiming
 from cutting.clip_selector_service import WindowScore, select_moments
 from effects.branding_overlay import BrandingOverlay, resolve_logo_path
 from effects.cover_generator import generate_cover
-from core.entities.detection import BoundingBox
 from effects.collision_detector import BannerPosition, resolve_banner_position_over_time
 from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
@@ -218,7 +217,8 @@ class PipelineRunner:
                     prev_gray = gray
 
                     if detector.available:
-                        frame_detections = detector.detect(frame)
+                        # присутствие в кадре считаем только по животным: человек не делает момент "вирусным"
+                        frame_detections = [d for d in detector.detect(frame) if is_animal_class(d.class_id)]
                         if frame_detections:
                             frames_with_detection += 1
                             detections_in_window.extend(frame_detections)

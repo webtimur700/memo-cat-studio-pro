@@ -25,10 +25,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from core.entities.detection import Detection
+from core.entities.detection import Detection, is_animal_class
 
 MIN_IOU_FOR_MATCH = 0.3
 DEFAULT_MAX_MISSED_FRAMES = 8
+
+
+def _same_object_group(class_a: int, class_b: int) -> bool:
+    """Один и тот же класс, либо оба — животные. Лёгкая YOLO11n часто путает
+    кошку с собакой/птицей от кадра к кадру; для слежения это один объект, иначе
+    трек рвётся при каждой смене метки."""
+    return class_a == class_b or (is_animal_class(class_a) and is_animal_class(class_b))
 
 
 @dataclass(slots=True)
@@ -78,7 +85,7 @@ class ObjectTracker:
             best_iou = self._min_iou
 
             for idx, detection in enumerate(unmatched_detections):
-                if detection.class_id != track.last_detection.class_id:
+                if not _same_object_group(detection.class_id, track.last_detection.class_id):
                     continue
                 iou = track.last_detection.bbox.iou(detection.bbox)
                 if iou > best_iou:
@@ -106,11 +113,18 @@ class ObjectTracker:
         return [t for t in self._tracks if t.is_active]
 
     def primary_track(self) -> Track | None:
-        """Главный объект в кадре для автокадрирования (Функция 5) — трек
-        с наибольшим суммарным временем присутствия в кадре, а не просто
-        последний по ID: это устойчивее к случайному кратковременному
-        объекту, мелькнувшему на пару кадров.
+        """Главный объект в кадре для автокадрирования (Функция 5).
+
+        Животные ВСЕГДА важнее людей: в роликах с животными человек часто
+        дольше и крупнее в кадре (нога, рука), но кадрировать нужно на питомца.
+        Среди животных (или, если их нет, среди остальных) выбирается трек с
+        наибольшим суммарным временем присутствия — устойчиво к объекту,
+        мелькнувшему на пару кадров. Трек животного, недавно пропавший из
+        кадра (в пределах max_missed_frames), всё ещё считается: иначе кроп
+        прыгал бы на человека при каждой потере детекции.
         """
         if not self._tracks:
             return None
-        return max(self._tracks, key=lambda t: len(t.detections))
+        animal_tracks = [t for t in self._tracks if is_animal_class(t.last_detection.class_id)]
+        candidates = animal_tracks or self._tracks
+        return max(candidates, key=lambda t: len(t.detections))

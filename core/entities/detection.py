@@ -49,3 +49,23 @@ class Detection:
     confidence: float
     bbox: BoundingBox
     frame_timestamp_sec: float = 0.0
+
+
+# Животные из COCO (индексы Ultralytics YOLO11): для них кадрирование и скоринг
+# имеют приоритет над человеком.
+COCO_ANIMAL_NAMES: dict[int, str] = {
+    14: "bird",
+    15: "cat",
+    16: "dog",
+    17: "horse",
+    18: "sheep",
+    19: "cow",
+    20: "elephant",
+    21: "bear",
+    22: "zebra",
+    23: "giraffe",
+}
+
+
+def is_animal_class(class_id: int) -> bool:
+    return class_id in COCO_ANIMAL_NAMES
