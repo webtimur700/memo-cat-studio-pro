@@ -40,12 +40,37 @@ class ManagedLMStudio:
         self._config = config or LMStudioConfig()
         self._reserve_mib = reserve_mib
         self._mem_reader = mem_reader
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()              # короткий: только состояние
+        self._lifecycle = threading.Lock()         # долгий: загрузка/выгрузка моделей не идут одновременно
+        self._users = 0                            # сколько пакетов/видео сейчас пользуются моделью
         self._provider: LMStudioProvider | None = None
         self._error: str | None = None
         self._thread: threading.Thread | None = None
         self.selection: Selection | None = None
         self._loaded_by_us: list[str] = []
+
+    # ------------------------------------------------------------------ учёт пользователей
+    def begin_use(self) -> None:
+        """Очередь начала работу: модель нужна, пока не вызван парный end_use(). Загрузка стартует в фоне."""
+        with self._lock:
+            self._users += 1
+        self.start_loading_in_background()
+
+    def end_use(self) -> bool:
+        """Очередь закончила. True — пользователей не осталось (можно звать release_if_unused())."""
+        with self._lock:
+            self._users = max(0, self._users - 1)
+            return self._users == 0
+
+    def release_if_unused(self) -> bool:
+        """Выгружает модель, только если пользователей нет (и они не появились, пока ждали блокировку).
+        Блокирующий — вызывать из фонового потока."""
+        with self._lifecycle:
+            with self._lock:
+                if self._users > 0:
+                    return False
+            self._release_locked()
+        return True
 
     # ------------------------------------------------------------------ подготовка
     def start_loading_in_background(self) -> None:
@@ -65,13 +90,16 @@ class ManagedLMStudio:
         return self._provider
 
     def _prepare(self) -> None:
-        with self._lock:
+        with self._lifecycle:
             if self._provider is not None:
                 return
             try:
-                self._provider = self._prepare_unlocked()
+                provider = self._prepare_unlocked()
+                with self._lock:
+                    self._provider = provider
             except (api.LMStudioAdminError, NoSuitableModelError) as exc:
-                self._error = f"Не удалось подготовить модель LM Studio: {exc}"
+                with self._lock:
+                    self._error = f"Не удалось подготовить модель LM Studio: {exc}"
                 logger.warning("{}", self._error)
 
     def _prepare_unlocked(self) -> LMStudioProvider:
@@ -130,7 +158,11 @@ class ManagedLMStudio:
 
     # ------------------------------------------------------------------ завершение
     def release(self) -> None:
-        """Выгружает модели, которые загрузили мы (память нужна пользователю)."""
+        """Безусловно выгружает модели, которые загрузили мы (память нужна пользователю)."""
+        with self._lifecycle:
+            self._release_locked()
+
+    def _release_locked(self) -> None:
         with self._lock:
             instances, self._loaded_by_us = self._loaded_by_us, []
             self._provider = None

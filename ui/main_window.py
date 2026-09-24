@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from loguru import logger
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
 from core.entities.settings import UserSettings
 from llm.lm_studio_provider import LMStudioConfig
 from llm.managed_provider import ManagedLMStudio
+from pipeline.job_scheduler import JobScheduler
+from pipeline.shared_models import SharedModels
 from ui.pipeline_worker import PipelineWorker
 from ui.views.batch_queue_view import BatchQueueView, JobStage
 from ui.views.project_view import ProjectView
@@ -51,6 +53,13 @@ class MainWindow(QMainWindow):
         self._settings = UserSettings.load_from_yaml(settings_path)
         self._workers: dict[str, PipelineWorker] = {}
         self._job_videos: dict[str, str] = {}   # job_id -> имя исходного видео
+        self._job_paths: dict[str, Path] = {}   # job_id -> путь к видео, пока задача ждёт очереди или идёт
+        self._job_counter = 0
+        # YOLO и Whisper общие на всю очередь; LLM тоже одна (ниже). Выгружаются, когда очередь опустела.
+        self._shared_models = SharedModels(MODELS_DIR)
+        self._scheduler = JobScheduler(
+            self._settings.batch.max_concurrent_videos, self._start_job, on_idle=self._on_queue_idle
+        )
         # одна LLM на все задачи: модель выбирается по рейтингу/памяти и загружается один раз (.env: LM_STUDIO_*)
         self._llm = ManagedLMStudio(LMStudioConfig.from_env(PROJECT_ROOT / ".env"))
 
@@ -107,37 +116,32 @@ class MainWindow(QMainWindow):
 
     def _wire_pipeline_signals(self) -> None:
         def on_videos_added(paths: list[Path]) -> None:
-            self._llm.start_loading_in_background()   # пока идёт анализ, модель грузится в фоне
+            jobs: list[tuple[str, Path]] = []
+            active = set(self._job_paths.values())
             for path in paths:
-                job_id = f"job_{abs(hash(str(path)))}_{len(self._workers)}"
-                self.batch_view.add_job(job_id, path.name)
+                if path in active:   # то же видео уже в очереди: его клипы перезаписали бы друг друга
+                    logger.info("Пропущено: {} уже в очереди", path.name)
+                    continue
+                active.add(path)
+                self._job_counter += 1
+                jobs.append((f"job_{self._job_counter}", path))
+            if not jobs:
+                return
+            if self._scheduler.is_idle:
+                self._llm.begin_use()   # пока идёт анализ, модель грузится в фоне; выгрузка — когда очередь опустеет
+            self.batch_view.add_jobs([(job_id, path.name) for job_id, path in jobs])
+            for job_id, path in jobs:
                 self._job_videos[job_id] = path.name
-                self.batch_view.update_progress(job_id, JobStage.QUEUED)
-
-                worker = PipelineWorker(
-                    job_id=job_id,
-                    video_path=path,
-                    settings=self._settings,
-                    models_dir=MODELS_DIR,
-                    output_dir=EXPORT_OUTPUT_DIR,
-                    llm_provider=self._llm,
-                    parent=self,
-                )
-                worker.stage_changed.connect(self._on_pipeline_stage_changed)
-                worker.job_finished.connect(self._on_pipeline_finished)
-                worker.job_failed.connect(self._on_pipeline_failed)
-                # QThread уничтожается Python-сборщиком мусора, если на него
-                # не держать ссылку — реальный, часто встречающийся баг в
-                # PySide6/PyQt. Держим воркер в self._workers до завершения.
-                self._workers[job_id] = worker
-                worker.start()
-
-                logger.info("Пайплайн запущен для видео: {}", path)
+                self._job_paths[job_id] = path
+                self._scheduler.submit(job_id)   # свободный слот — запуск сразу, иначе «В очереди»
+            logger.info("В очередь добавлено видео: {} (идёт: {}, ждёт: {})", len(paths),
+                        self._scheduler.running_count, self._scheduler.waiting_count)
 
         self.project_view.videos_added.connect(on_videos_added)
 
         def on_settings_saved(updated_settings: UserSettings) -> None:
             self._settings = updated_settings
+            self._scheduler.set_max_concurrent(updated_settings.batch.max_concurrent_videos)
             logger.info(
                 "Настройки обновлены: threshold={}, quality={}",
                 updated_settings.viral_score.queue_threshold,
@@ -145,6 +149,50 @@ class MainWindow(QMainWindow):
             )
 
         self.settings_view.settings_saved.connect(on_settings_saved)
+
+    def _start_job(self, job_id: str) -> None:
+        try:
+            self._launch_worker(job_id)
+        except Exception as exc:   # не смогли даже запустить поток: пометим ошибкой и пойдём дальше по очереди
+            logger.exception("Не удалось запустить обработку {}: {}", job_id, exc)
+            self._job_videos.pop(job_id, None)
+            self.batch_view.mark_failed(job_id, str(exc))
+            QTimer.singleShot(0, lambda: self._finish_job(job_id))
+
+    def _launch_worker(self, job_id: str) -> None:
+        path = self._job_paths[job_id]
+        worker = PipelineWorker(
+            job_id=job_id,
+            video_path=path,
+            settings=self._settings,
+            models_dir=MODELS_DIR,
+            output_dir=EXPORT_OUTPUT_DIR,
+            llm_provider=self._llm,
+            shared_models=self._shared_models,
+            parent=self,
+        )
+        worker.stage_changed.connect(self._on_pipeline_stage_changed)
+        worker.job_finished.connect(self._on_pipeline_finished)
+        worker.job_failed.connect(self._on_pipeline_failed)
+        worker.finished.connect(worker.deleteLater)   # уничтожаем поток только когда он реально остановился
+        # QThread уничтожается Python-сборщиком мусора, если на него не держать ссылку — держим до завершения.
+        self._workers[job_id] = worker
+        self.batch_view.update_progress(job_id, JobStage.ANALYZING)
+        worker.start()
+        logger.info("Пайплайн запущен для видео: {}", path)
+
+    def _finish_job(self, job_id: str) -> None:
+        self._workers.pop(job_id, None)
+        self._job_paths.pop(job_id, None)
+        self._scheduler.job_done(job_id)   # запускает следующее видео; при пустой очереди зовёт _on_queue_idle
+
+    def _on_queue_idle(self) -> None:
+        """Очередь пуста: выгружаем LLM (в фоне — выгрузка не блокирует UI) и общие YOLO/Whisper."""
+        import threading
+
+        self._shared_models.close()
+        if self._llm.end_use():
+            threading.Thread(target=self._llm.release_if_unused, name="lm-studio-release", daemon=True).start()
 
     def _on_pipeline_stage_changed(self, job_id: str, stage: str, data: dict) -> None:
         stage_map = {
@@ -163,15 +211,17 @@ class MainWindow(QMainWindow):
     def _on_pipeline_finished(self, job_id: str, clips: list) -> None:
         self.batch_view.update_progress(job_id, JobStage.DONE, moments_found=len(clips))
         logger.info("Готово: {} клип(ов) для job {}", len(clips), job_id)
-        self._workers.pop(job_id, None)
-        self._release_llm_if_idle()
         source_name = self._job_videos.pop(job_id, "")
+        self._finish_job(job_id)
         if not clips:
             return
         durations = [f"{c.moment.start_sec:.0f}-{c.moment.end_sec:.0f}s (score {c.moment.viral_score})" for c in clips]
         logger.info("Найденные моменты: {}", ", ".join(durations))
-        self.editor_view.add_results([ClipResult.from_clip(c, source_name) for c in clips])
-        if not self._workers:  # все задачи завершены — показываем результаты
+        # пользователь может смотреть другой клип — новые результаты очереди не перехватывают выбор
+        self.editor_view.add_results(
+            [ClipResult.from_clip(c, source_name) for c in clips], select_first=self.editor_view.current is None
+        )
+        if self._scheduler.is_idle:  # вся очередь обработана — показываем результаты
             self.show_page(1)
 
     def show_page(self, index: int) -> None:
@@ -183,15 +233,8 @@ class MainWindow(QMainWindow):
 
     def _on_pipeline_failed(self, job_id: str, error_message: str) -> None:
         self.batch_view.mark_failed(job_id, error_message)
-        self._workers.pop(job_id, None)
-        self._release_llm_if_idle()
-
-    def _release_llm_if_idle(self) -> None:
-        """Все задачи завершены — выгружаем LLM, чтобы вернуть память (в фоне: выгрузка не блокирует UI)."""
-        if not self._workers:
-            import threading
-
-            threading.Thread(target=self._llm.release, name="lm-studio-release", daemon=True).start()
+        self._job_videos.pop(job_id, None)
+        self._finish_job(job_id)
 
     def load_demo_timeline(self) -> None:
         """Вспомогательный метод для ручной проверки timeline_view без

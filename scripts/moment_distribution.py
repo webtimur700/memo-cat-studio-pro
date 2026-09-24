@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.entities.settings import UserSettings  # noqa: E402
 from cutting.clip_selector_service import WindowScore, select_moments  # noqa: E402
-from pipeline.pipeline_runner import PipelineRunner, _try_load_yolo  # noqa: E402
+from pipeline.pipeline_runner import PipelineRunner, _DetectorHandle  # noqa: E402
+from pipeline.shared_models import SharedModels  # noqa: E402
 from video.ingestion_service import IngestionService  # noqa: E402
 
 
@@ -25,7 +26,7 @@ def scan(video: Path) -> tuple[list[WindowScore], float, list[float]]:
     runner = PipelineRunner(models_dir=Path("models"))
     duration = IngestionService().ingest(video).duration_sec
     scenes = runner._detect_scenes_safely(video)
-    windows = runner._scan_windows(video, duration, _try_load_yolo(Path("models")), scenes)
+    windows = runner._scan_windows(video, duration, _DetectorHandle(SharedModels(Path("models")).detector()), scenes)
     boundaries = sorted({s.start_sec for s in scenes if s.start_sec > 0} | {s.end_sec for s in scenes if s.end_sec < duration})
     return windows, duration, boundaries
 

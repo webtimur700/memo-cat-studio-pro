@@ -18,6 +18,7 @@ from PySide6.QtCore import QThread, Signal
 from core.entities.clip import Clip
 from core.entities.settings import UserSettings
 from pipeline.pipeline_runner import PipelineRunner
+from pipeline.shared_models import SharedModels
 
 
 
@@ -34,6 +35,7 @@ class PipelineWorker(QThread):
         models_dir: Path,
         output_dir: Path,
         llm_provider: object | None = None,
+        shared_models: SharedModels | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -43,6 +45,7 @@ class PipelineWorker(QThread):
         self._models_dir = models_dir
         self._output_dir = output_dir
         self._llm_provider = llm_provider
+        self._shared_models = shared_models
 
     def run(self) -> None:  # выполняется в отдельном потоке — тяжёлая работа здесь безопасна
         def on_progress(stage: str, data: dict) -> None:
@@ -52,7 +55,10 @@ class PipelineWorker(QThread):
             # LLM (ManagedLMStudio) — общая на все задачи: модель выбирается и загружается один раз.
             # Если LM Studio не запущена, раннер ловит ошибку, пишет warning и берёт заголовок по умолчанию.
             runner = PipelineRunner(
-                models_dir=self._models_dir, output_dir=self._output_dir, llm_provider=self._llm_provider
+                models_dir=self._models_dir,
+                output_dir=self._output_dir,
+                llm_provider=self._llm_provider,
+                shared_models=self._shared_models,
             )
             clips: list[Clip] = runner.process_video(self._video_path, self._settings, progress=on_progress)
             self.job_finished.emit(self._job_id, clips)

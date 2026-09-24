@@ -151,6 +151,14 @@ class SettingsView(QWidget):
         self._quality_combo.currentTextChanged.connect(self._on_field_changed)
         form.addRow(QLabel("Качество экспорта"), self._quality_combo)
 
+        # --- Очередь: сколько видео одновременно ---
+        self._concurrent_spin = QSpinBox()
+        self._concurrent_spin.setRange(1, 16)
+        self._concurrent_spin.setValue(initial_settings.batch.max_concurrent_videos)
+        self._concurrent_spin.setToolTip("Остальные видео ждут в очереди. Модели YOLO/Whisper/LLM общие на всю очередь.")
+        self._concurrent_spin.valueChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Видео одновременно"), self._concurrent_spin)
+
         self._save_button = QPushButton("Сохранить настройки")
         self._save_button.setObjectName("primaryButton")
         self._save_button.setEnabled(False)
@@ -197,6 +205,8 @@ class SettingsView(QWidget):
         updated = updated.with_field(
             "safe_zone", **{name: spin.value() for name, spin in self._safe_zone_spins.items()}
         )
+
+        updated = updated.with_field("batch", max_concurrent_videos=self._concurrent_spin.value())
 
         self._settings = updated
         self._save_button.setEnabled(False)

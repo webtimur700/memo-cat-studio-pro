@@ -177,3 +177,35 @@ def test_manage_models_off_behaves_like_plain_provider(lm_server):
     managed = _managed(url, available_mib=64 * 1024, manage_models=False, model_override="vendor/small-chat")
     managed.complete("s", "u")
     assert state.load_calls == []
+
+
+def test_model_loaded_once_for_a_whole_queue_and_released_only_when_no_users(lm_server):
+    state, url = lm_server
+    managed = _managed(url, available_mib=64 * 1024)
+    managed.begin_use()                       # очередь стартовала
+    for _ in range(3):                        # три видео подряд, по нескольку запросов на каждое
+        managed.complete("s", "u")
+        managed.complete("s", "u")
+    assert len(state.load_calls) == 1 and state.unload_calls == []
+
+    managed.begin_use()                       # ещё одна партия добавлена, пока первая не закончилась
+    assert managed.end_use() is False         # первая закончилась, вторая идёт — выгружать нельзя
+    assert managed.release_if_unused() is False and state.unload_calls == []
+    managed.complete("s", "u")                # модель на месте
+    assert len(state.load_calls) == 1
+
+    assert managed.end_use() is True
+    assert managed.release_if_unused() is True
+    assert state.unload_calls == ["vendor/big-vision"] and state.loaded == []
+
+
+def test_new_batch_after_release_loads_again(lm_server):
+    state, url = lm_server
+    managed = _managed(url, available_mib=64 * 1024)
+    managed.begin_use()
+    managed.complete("s", "u")
+    managed.end_use()
+    managed.release_if_unused()
+    managed.begin_use()
+    managed.complete("s", "u")
+    assert len(state.load_calls) == 2

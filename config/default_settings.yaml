@@ -94,7 +94,7 @@ export:
   bitrate_mbps: 12
 
 batch:
-  max_concurrent_videos: 100
+  max_concurrent_videos: 1     # сколько видео обрабатывается одновременно; остальные ждут в очереди (длина очереди не ограничена)
   max_worker_processes: null   # null = автоматически: os.cpu_count() - 2 (резерв под UI)
 
 plugins:

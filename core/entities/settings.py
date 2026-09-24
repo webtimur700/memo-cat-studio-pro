@@ -94,6 +94,17 @@ class ExportSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class BatchSettings:
+    """Очередь пакетной обработки: сколько видео обрабатывается одновременно (остальные ждут)."""
+
+    max_concurrent_videos: int = 1
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any]) -> "BatchSettings":
+        return cls(max_concurrent_videos=max(1, int(raw.get("max_concurrent_videos", 1))))
+
+
+@dataclass(frozen=True, slots=True)
 class UserSettings:
     """Корневой агрегат настроек. Immutable — изменения выполняются через
     replace_field(), что предотвращает случайную мутацию shared-объекта
@@ -107,6 +118,7 @@ class UserSettings:
     branding: BrandingSettings = field(default_factory=BrandingSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     safe_zone: SafeZoneSettings = field(default_factory=SafeZoneSettings)
+    batch: BatchSettings = field(default_factory=BatchSettings)
 
     @classmethod
     def load_from_yaml(cls, path: Path) -> "UserSettings":
@@ -196,6 +208,7 @@ class UserSettings:
                 left_px=safe_raw.get("left_px", 60),
                 right_px=safe_raw.get("right_px", 150),
             ),
+            batch=BatchSettings.from_raw(raw.get("batch", {})),
         )
 
     def with_field(self, section: str, **changes: Any) -> "UserSettings":

@@ -42,6 +42,7 @@ from effects.collision_detector import BannerPosition, resolve_banner_position_o
 from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
 from llm.content_generator import ClipContent, generate_clip_content
+from pipeline.shared_models import SharedModels
 from scoring.viral_score_service import ScoreInputs, compute_viral_score
 from subtitles.ass_renderer import estimate_subtitle_band_height, render_ass
 from subtitles.subtitle_service import group_words_into_segments
@@ -118,26 +119,6 @@ class _DetectorHandle:
         return self.detector.detect(frame)  # type: ignore[attr-defined]
 
 
-def _try_load_yolo(models_dir: Path) -> _DetectorHandle:
-    model_path = models_dir / "yolo11n.onnx"
-    if not model_path.exists():
-        logger.warning(
-            "YOLO11 модель не найдена ({}) — скоринг и автокадрирование "
-            "работают в упрощённом режиме (motion-эвристика, без детекции "
-            "животных). Запустите scripts/download_models.py для полного AI-анализа.",
-            model_path,
-        )
-        return _DetectorHandle(detector=None)
-
-    try:
-        from vision.yolo_detector import YoloDetector
-
-        return _DetectorHandle(detector=YoloDetector(model_path))
-    except Exception as exc:
-        logger.warning("Не удалось загрузить YOLO11 ({}): {} — работаю без детекции", model_path, exc)
-        return _DetectorHandle(detector=None)
-
-
 class PipelineRunner:
     def __init__(
         self,
@@ -145,13 +126,15 @@ class PipelineRunner:
         output_dir: Path | None = None,
         llm_provider: object | None = None,
         assets_dir: Path | None = None,
+        shared_models: SharedModels | None = None,
     ) -> None:
         # assets/logo/logo.png (если положили) подхватывается вместо логотипа по умолчанию
         self._assets_dir = assets_dir or PROJECT_ROOT / "assets"
         self._models_dir = models_dir or Path("models")
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
-        self._transcriber = None  # создаётся на каждый process_video
+        # YOLO и Whisper: если раннер создан очередью — модели общие на все видео, иначе свои на этот раннер
+        self._shared = shared_models or SharedModels(self._models_dir)
         self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
         # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
         # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
@@ -168,12 +151,11 @@ class PipelineRunner:
             if progress is not None:
                 progress(stage, data)
 
-        self._transcriber = None
         self._llm_unavailable = False
         self._word_cache = []
         emit("analyzing")
         source = IngestionService().ingest(video_path)
-        detector = _try_load_yolo(self._models_dir)
+        detector = _DetectorHandle(detector=self._shared.detector())
         scenes = self._detect_scenes_safely(video_path)
 
         emit("scoring")
@@ -556,16 +538,8 @@ class PipelineRunner:
         return samples, head_regions
 
     def _get_transcriber(self, settings: UserSettings):
-        """Один WhisperTranscriber на весь прогон видео: модель грузится в память
-        один раз (ленивo, при первой транскрипции), а не заново для каждого момента.
-        """
-        if self._transcriber is None:
-            from subtitles.subtitle_service import WhisperTranscriber
-
-            self._transcriber = WhisperTranscriber(
-                model_size=settings.subtitles.model_size, compute_type=settings.subtitles.compute_type
-            )
-        return self._transcriber
+        """Whisper общий на все видео очереди: модель грузится в память один раз (лениво)."""
+        return self._shared.transcriber(settings.subtitles.model_size, settings.subtitles.compute_type)
 
     def _transcribe_range(self, video_path: Path, start: float, end: float, settings: UserSettings) -> list[WordTiming]:
         """Слова диапазона [start, end] с АБСОЛЮТНЫМИ таймкодами. Транскрибируется
@@ -581,9 +555,10 @@ class PipelineRunner:
         try:
             FFmpegWrapper().extract_audio_track(video_path, audio_path, start_sec=start, duration_sec=end - start)
             transcriber = self._get_transcriber(settings)
-            relative = transcriber.transcribe(audio_path, language=settings.subtitles.language)
-            language = getattr(transcriber, "last_language", None)
-            probability = getattr(transcriber, "last_language_probability", 1.0)
+            with self._shared.transcribe_lock:   # last_language — состояние общего транскрайбера
+                relative = transcriber.transcribe(audio_path, language=settings.subtitles.language)
+                language = getattr(transcriber, "last_language", None)
+                probability = getattr(transcriber, "last_language_probability", 1.0)
             if 0 < len(relative) < MIN_RELIABLE_WORDS and probability < RELIABLE_LANGUAGE_PROB:
                 # 1-2 слова и язык определён неуверенно (на смехе/шуме Whisper "слышит" корейский и т.п.)
                 logger.info(

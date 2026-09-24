@@ -172,3 +172,41 @@ def test_selection_signal_is_emitted_once_per_click(qapp):
         view.set_moments([TimelineMoment(10.0, 30.0, 70, "a"), TimelineMoment(40.0, 60.0, 80, "b")], 100.0)
     view._items[1].setSelected(True)
     assert emitted == [40.0]
+
+
+def test_switching_clip_after_playback_started_does_not_freeze_the_ui(tmp_path):
+    """Смена клипа при открытом другом раньше вешала интерфейс (GIL-дедлок Qt Multimedia на реальном
+    h264 1080x1920). Прогон в подпроцессе с таймаутом: зависание = провал, а не вечный тест."""
+    import subprocess
+    import sys
+    import textwrap
+
+    for name in ("a", "b"):
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1080x1920:duration=3:rate=30",
+             "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libx264", "-c:a", "aac",
+             "-pix_fmt", "yuv420p", str(tmp_path / f"{name}.mp4")], check=True,
+        )
+    script = textwrap.dedent(f"""
+        import os, time
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        from pathlib import Path
+        from PySide6.QtCore import QCoreApplication
+        from PySide6.QtWidgets import QApplication
+        from ui.views.preview_player import PreviewPlayer
+        app = QApplication([])
+        player = PreviewPlayer()
+        def spin(sec):
+            end = time.time() + sec
+            while time.time() < end:
+                QCoreApplication.processEvents(); time.sleep(0.01)
+        for name in ("a", "b", "a", "b"):
+            player.load_video(Path(r"{tmp_path}") / (name + ".mp4"))
+            spin(1.5)
+        player.load_video(Path(r"{tmp_path}") / "a.mp4", autoplay=True)
+        spin(0.5)
+        print("OK")
+    """)
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=90,
+                            cwd=Path(__file__).resolve().parents[2])
+    assert "OK" in result.stdout, result.stderr[-500:]

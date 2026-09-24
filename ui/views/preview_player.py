@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
@@ -20,6 +20,8 @@ def _format_ms(ms: int) -> str:
 
 
 class PreviewPlayer(QWidget):
+    _source_requested = Signal(QUrl)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
@@ -31,6 +33,12 @@ class PreviewPlayer(QWidget):
         self._audio_output = QAudioOutput(self)
         self._player.setAudioOutput(self._audio_output)
         self._player.setVideoOutput(self._video_widget)
+        # Смена клипа при уже открытом другом: QMediaPlayer.setSource ждёт остановки потока декодера,
+        # а тот при разрушении своих объектов берёт GIL, который держит вызвавший Python-код — интерфейс
+        # замирает навсегда (воспроизводится на реальных 1080x1920 h264). Поэтому setSource вызывается
+        # НАТИВНОЙ queued-связью прямо из цикла событий, без Python-кадров и с отпущенным GIL.
+        self._requested_path: Path | None = None
+        self._source_requested.connect(self._player.setSource, Qt.ConnectionType.QueuedConnection)
 
         self._play_button = QPushButton("▶")
         self._play_button.setFixedWidth(40)
@@ -61,15 +69,15 @@ class PreviewPlayer(QWidget):
 
     @property
     def source_path(self) -> Path | None:
-        url = self._player.source()
-        return Path(url.toLocalFile()) if url.isLocalFile() else None
+        return self._requested_path   # сам QMediaPlayer получает источник чуть позже (queued setSource)
 
     def load_video(self, path: Path, autoplay: bool = False) -> None:
         """Загружает клип; pause() показывает первый кадр вместо чёрного экрана."""
         self._pause_when_loaded = not autoplay
-        self._player.setSource(QUrl.fromLocalFile(str(path)))
+        self._requested_path = path
+        self._source_requested.emit(QUrl.fromLocalFile(str(path)))
         if autoplay:
-            self._player.play()
+            QTimer.singleShot(0, self._player.play)   # после queued setSource
 
     def play(self) -> None:
         self._player.play()
@@ -80,7 +88,10 @@ class PreviewPlayer(QWidget):
             QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia
         ):
             self._pause_when_loaded = False
-            self._player.pause()
+            # pause() прямо из обработчика mediaStatusChanged (он вызывается синхронно из setSource)
+            # вешает Qt Multimedia (ffmpeg-бэкенд) намертво, когда клип меняют при уже открытом
+            # другом: интерфейс замирает. Откладываем в цикл событий.
+            QTimer.singleShot(0, self._player.pause)
 
     def seek_to(self, seconds: float) -> None:
         self._player.setPosition(int(seconds * 1000))
