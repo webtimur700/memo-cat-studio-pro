@@ -116,6 +116,18 @@ class AudioSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class CacheSettings:
+    """Очистка при нехватке места: временные файлы и старые логи удаляются сами, клипы — только с подтверждения."""
+
+    min_free_gb: float = 5.0
+    log_keep_days: int = 14
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any]) -> "CacheSettings":
+        return cls(min_free_gb=float(raw.get("min_free_gb", 5.0)), log_keep_days=int(raw.get("log_keep_days", 14)))
+
+
+@dataclass(frozen=True, slots=True)
 class BatchSettings:
     """Очередь пакетной обработки: сколько видео обрабатывается одновременно (остальные ждут)."""
 
@@ -142,6 +154,7 @@ class UserSettings:
     safe_zone: SafeZoneSettings = field(default_factory=SafeZoneSettings)
     batch: BatchSettings = field(default_factory=BatchSettings)
     audio: AudioSettings = field(default_factory=AudioSettings)
+    cache: CacheSettings = field(default_factory=CacheSettings)
 
     @classmethod
     def load_from_yaml(cls, path: Path) -> "UserSettings":
@@ -234,6 +247,7 @@ class UserSettings:
             ),
             batch=BatchSettings.from_raw(raw.get("batch", {})),
             audio=AudioSettings.from_raw(raw.get("audio", {})),
+            cache=CacheSettings.from_raw(raw.get("cache", {})),
         )
 
     def with_field(self, section: str, **changes: Any) -> "UserSettings":

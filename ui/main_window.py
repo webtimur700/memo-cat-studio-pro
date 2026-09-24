@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QHBoxLayout,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 from core.entities.settings import UserSettings
 from llm.lm_studio_provider import LMStudioConfig
 from llm.managed_provider import ManagedLMStudio
+from pipeline.cache_cleaner import CacheCleaner, ResultGroup
 from pipeline.job_scheduler import JobScheduler
 from pipeline.shared_models import SharedModels
 from ui.pipeline_worker import PipelineWorker
@@ -57,6 +59,8 @@ class MainWindow(QMainWindow):
         self._job_counter = 0
         # YOLO и Whisper общие на всю очередь; LLM тоже одна (ниже). Выгружаются, когда очередь опустела.
         self._shared_models = SharedModels(MODELS_DIR)
+        self._cleaner = self._make_cleaner()
+        self._cleanup_declined = False   # пользователь отказался удалять клипы — до конца очереди не переспрашиваем
         self._scheduler = JobScheduler(
             self._settings.batch.max_concurrent_videos, self._start_job, on_idle=self._on_queue_idle
         )
@@ -85,6 +89,8 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._stack, stretch=1)
 
         self._wire_pipeline_signals()
+
+        self._ensure_disk_space(queue_idle=True)
 
         # результаты прошлых запусков (json + клипы в папке экспорта) не пропадают после перезапуска
         self.editor_view.add_results(load_results_from_dir(EXPORT_OUTPUT_DIR))
@@ -142,6 +148,7 @@ class MainWindow(QMainWindow):
         def on_settings_saved(updated_settings: UserSettings) -> None:
             self._settings = updated_settings
             self._scheduler.set_max_concurrent(updated_settings.batch.max_concurrent_videos)
+            self._cleaner = self._make_cleaner()
             logger.info(
                 "Настройки обновлены: threshold={}, quality={}",
                 updated_settings.viral_score.queue_threshold,
@@ -149,6 +156,46 @@ class MainWindow(QMainWindow):
             )
 
         self.settings_view.settings_saved.connect(on_settings_saved)
+
+    def _make_cleaner(self) -> CacheCleaner:
+        return CacheCleaner(
+            output_dir=EXPORT_OUTPUT_DIR,
+            logs_dir=PROJECT_ROOT / "logs",
+            min_free_bytes=int(self._settings.cache.min_free_gb * 1e9),
+            log_keep_days=self._settings.cache.log_keep_days,
+        )
+
+    def _ensure_disk_space(self, queue_idle: bool) -> None:
+        """Мало места: удаляем временные файлы и старые логи сами; клипы — только если пользователь подтвердит."""
+        if not self._cleaner.is_low_space():
+            return
+        report = self._cleaner.clean_if_low(temp_age_sec=300 if queue_idle else None)
+        if not report.still_low or self._cleanup_declined:
+            return
+        needed = int(self._settings.cache.min_free_gb * 1e9) - report.free_after
+        groups = self._cleaner.groups_to_free(needed)
+        if not groups:
+            logger.warning("Мало места на диске ({:.1f} ГБ), а удалять нечего", report.free_after / 1e9)
+            return
+        if self._confirm_delete(groups, report.free_after):
+            self._cleaner.delete_result_groups(groups, confirmed=True)
+        else:
+            self._cleanup_declined = True
+
+    def _confirm_delete(self, groups: list[ResultGroup], free_bytes: int) -> bool:
+        total_mb = sum(g.size_bytes for g in groups) / 1e6
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Мало места на диске")
+        box.setText(
+            f"Свободно {free_bytes / 1e9:.1f} ГБ. Временные файлы и старые логи уже удалены, этого мало.\n"
+            f"Удалить {len(groups)} самых старых готовых клипов ({total_mb:.0f} МБ) вместе с обложками, "
+            f"JSON и субтитрами? Это необратимо."
+        )
+        box.setDetailedText("\n".join(g.stem for g in groups))
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)   # случайный Enter клипы не удалит
+        return box.exec() == QMessageBox.StandardButton.Yes
 
     def _start_job(self, job_id: str) -> None:
         try:
@@ -160,6 +207,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self._finish_job(job_id))
 
     def _launch_worker(self, job_id: str) -> None:
+        self._ensure_disk_space(queue_idle=False)
         path = self._job_paths[job_id]
         worker = PipelineWorker(
             job_id=job_id,
@@ -190,6 +238,7 @@ class MainWindow(QMainWindow):
         """Очередь пуста: выгружаем LLM (в фоне — выгрузка не блокирует UI) и общие YOLO/Whisper."""
         import threading
 
+        self._cleanup_declined = False
         self._shared_models.close()
         if self._llm.end_use():
             threading.Thread(target=self._llm.release_if_unused, name="lm-studio-release", daemon=True).start()

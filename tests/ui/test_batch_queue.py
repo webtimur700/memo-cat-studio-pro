@@ -151,3 +151,34 @@ def view_stage(i):
     from ui.views.batch_queue_view import JobStage
 
     return [JobStage.QUEUED, JobStage.ANALYZING, JobStage.CUTTING, JobStage.DONE][i % 4]
+
+
+def test_low_disk_cleans_temp_silently_but_asks_before_deleting_clips(window, tmp_path, monkeypatch):
+    import os
+
+    out = tmp_path / "out"
+    out.mkdir(exist_ok=True)
+    stale = out / "_tmp_audio_x_0.wav"
+    stale.write_bytes(b"x")
+    os.utime(stale, (time.time() - 86400,) * 2)
+    clip = out / "keep_moment1.mp4"
+    clip.write_bytes(b"clip")
+    os.utime(clip, (time.time() - 86400 * 20,) * 2)
+
+    window._cleaner = main_window.CacheCleaner(
+        out, tmp_path / "logs", min_free_bytes=10**12, temp_root=tmp_path / "systmp", disk_free=lambda _p: 100
+    )
+    asked = []
+    window._confirm_delete = lambda groups, free: asked.append([g.stem for g in groups]) or False   # пользователь отказывает
+
+    window.project_view.videos_added.emit([Path("/v/a.mp4"), Path("/v/b.mp4")])
+    assert _pump(lambda: window._scheduler.is_idle and not window._workers)
+
+    assert not stale.exists()              # временный файл убран без вопросов
+    assert clip.exists()                   # клип цел: пользователь отказал
+    assert asked == [["keep_moment1"]]     # спросили ровно один раз на всю очередь, а не на каждое видео
+
+    window._cleanup_declined = False
+    window._confirm_delete = lambda groups, free: True
+    window._ensure_disk_space(queue_idle=True)
+    assert not clip.exists()               # подтвердил — удалено

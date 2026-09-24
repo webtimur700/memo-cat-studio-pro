@@ -99,6 +99,12 @@ batch:
   max_concurrent_videos: 1     # сколько видео обрабатывается одновременно; остальные ждут в очереди (длина очереди не ограничена)
   max_worker_processes: null   # null = автоматически: os.cpu_count() - 2 (резерв под UI)
 
+cache:
+  # Мало места на диске (меньше min_free_gb свободных) -> удаляются временные файлы приложения и старые логи.
+  # Готовые клипы, обложки, JSON и субтитры в export/output удаляются ТОЛЬКО с подтверждения пользователя.
+  min_free_gb: 5
+  log_keep_days: 14
+
 plugins:
   enabled_dirs: ["plugins/"]
   autoload: true
