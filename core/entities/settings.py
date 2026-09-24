@@ -55,6 +55,7 @@ class SubtitleSettings:
     word_highlight: bool = True
     language: str = "auto"       # язык речи: "auto" — определять по звуку (принудительный язык на чужой речи даёт мусор)
     translate_to: str = "ru"     # переводить субтитры через LLM на этот язык ("" — не переводить)
+    export_formats: tuple[str, ...] = ("srt", "ass")   # файлы субтитров, которые кладутся рядом с клипом
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +173,7 @@ class UserSettings:
                 word_highlight=subs_raw.get("word_highlight", True),
                 language=subs_raw.get("language", "auto"),
                 translate_to=subs_raw.get("translate_to", "ru"),
+                export_formats=tuple(f.lower() for f in subs_raw.get("export_formats", ["srt", "ass"])),
             ),
             branding=BrandingSettings(
                 banner_position=branding_raw.get("banner", {}).get("position", "bottom_center"),

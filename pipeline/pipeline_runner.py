@@ -44,7 +44,7 @@ from export.export_service import ExportPlan, ExportService
 from llm.content_generator import ClipContent, generate_clip_content
 from pipeline.shared_models import SharedModels
 from scoring.viral_score_service import ScoreInputs, compute_viral_score
-from subtitles.ass_renderer import estimate_subtitle_band_height, render_ass
+from subtitles.ass_renderer import estimate_subtitle_band_height, render_ass, render_srt
 from subtitles.subtitle_service import group_words_into_segments
 from video.ffmpeg_wrapper import FFmpegWrapper
 from video.frame_extractor import FrameExtractor
@@ -281,7 +281,8 @@ class PipelineRunner:
         original_transcript = " ".join(w.text for w in words)
         words = self._translate_subtitles(words, self.last_moment_language, settings)
         zone = SafeZone.from_settings((settings.export.width, settings.export.height), settings.safe_zone)
-        subtitle_ass_path = self._write_subtitles(video_path, moment, words, settings, zone)
+        output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
+        subtitle_ass_path, subtitle_files = self._write_subtitles(output_path, words, settings, zone)
         branding = self._build_branding(settings, zone)
         banner_appear_sec, banner_duration_sec = 4.0, 5.0
         subtitles_during_banner = subtitle_ass_path is not None and any(
@@ -291,8 +292,6 @@ class PipelineRunner:
             settings, crop_samples, head_regions, branding, banner_appear_sec, banner_duration_sec,
             zone=zone, subtitles_during_banner=subtitles_during_banner,
         )
-
-        output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
 
         plan = ExportPlan(
             source_path=video_path,
@@ -312,9 +311,11 @@ class PipelineRunner:
             ExportService().export_clip(plan)
         except Exception as exc:
             logger.error("Экспорт момента {} из {} не удался: {}", index + 1, video_path.name, exc)
+            for path in subtitle_files.values():   # клипа нет — файлы субтитров без него не нужны
+                path.unlink(missing_ok=True)
             return None
         finally:
-            if subtitle_ass_path is not None:
+            if subtitle_ass_path is not None and subtitle_ass_path not in subtitle_files.values():
                 subtitle_ass_path.unlink(missing_ok=True)
 
         transcript = " ".join(w.text for w in words)
@@ -325,6 +326,7 @@ class PipelineRunner:
         metadata_path = self._write_metadata(
             output_path, video_path, moment, transcript, title, content, cover_path,
             transcript_original=original_transcript, language=self.last_moment_language,
+            subtitle_files=subtitle_files,
         )
 
         return Clip(
@@ -337,6 +339,7 @@ class PipelineRunner:
             transcript=transcript,
             metadata_path=metadata_path,
             cover_path=cover_path,
+            subtitle_paths=tuple(subtitle_files.values()),
         )
 
     # ------------------------------------------------------------------
@@ -435,6 +438,7 @@ class PipelineRunner:
         cover_path: Path | None = None,
         transcript_original: str = "",
         language: str | None = None,
+        subtitle_files: dict[str, Path] | None = None,
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
         payload = {
@@ -451,6 +455,7 @@ class PipelineRunner:
             "transcript": transcript,
             "transcript_original": transcript_original if transcript_original != transcript else "",
             "speech_language": language,
+            "subtitle_files": {fmt: path.name for fmt, path in (subtitle_files or {}).items()},
             "llm_errors": list(content.errors),
             "llm_model": self._llm_model_name(),
             "vision_used": content.used_image,
@@ -625,30 +630,52 @@ class PipelineRunner:
 
     def _write_subtitles(
         self,
-        video_path: Path,
-        moment: Moment,
+        output_path: Path,
         words: list[WordTiming],
         settings: UserSettings,
         zone: SafeZone | None = None,
-    ) -> Path | None:
-        if not words or not settings.subtitles.burn_in:
-            return None
-        ass_path = self._output_dir / f"_tmp_subs_{video_path.stem}_{int(moment.start_sec)}.ass"
+    ) -> tuple[Path | None, dict[str, Path]]:
+        """Субтитры клипа. Слова уже с таймингами от НАЧАЛА КЛИПА.
+
+        Возвращает (ASS для вжигания в видео или None, {формат: файл рядом с клипом}). SRT и ASS
+        (settings.subtitles.export_formats) лежат в папке экспорта под именем клипа — например,
+        чтобы отдельно загрузить субтитры на YouTube. Если вжигание включено, а ASS не в списке
+        форматов, для ffmpeg делается временный файл (его удаляет вызывающий).
+        """
+        if not words:
+            return None, {}
+        formats = settings.subtitles.export_formats
+        want_burn = settings.subtitles.burn_in
+        saved: dict[str, Path] = {}
+        burn_path: Path | None = None
         try:
             segments = group_words_into_segments(words)
-            frame_size = (settings.export.width, settings.export.height)
-            margin_l, margin_r, margin_v = (zone or SafeZone.from_settings(frame_size, settings.safe_zone)).subtitle_margins(frame_size)
-            ass_content = render_ass(
-                segments, style_preset=settings.subtitles.style_preset,
-                play_res_x=frame_size[0], play_res_y=frame_size[1],
-                margin_l=margin_l, margin_r=margin_r, margin_v=margin_v,
-            )
-            ass_path.parent.mkdir(parents=True, exist_ok=True)
-            ass_path.write_text(ass_content, encoding="utf-8")
-            return ass_path
+            if "srt" in formats:
+                saved["srt"] = output_path.with_suffix(".srt")
+                saved["srt"].write_text(render_srt(segments), encoding="utf-8")
+            if "ass" in formats or want_burn:
+                frame_size = (settings.export.width, settings.export.height)
+                margin_l, margin_r, margin_v = (
+                    zone or SafeZone.from_settings(frame_size, settings.safe_zone)
+                ).subtitle_margins(frame_size)
+                ass_content = render_ass(
+                    segments, style_preset=settings.subtitles.style_preset,
+                    play_res_x=frame_size[0], play_res_y=frame_size[1],
+                    margin_l=margin_l, margin_r=margin_r, margin_v=margin_v,
+                )
+                ass_path = output_path.with_suffix(".ass") if "ass" in formats else (
+                    output_path.with_name(f"_tmp_subs_{output_path.stem}.ass")
+                )
+                ass_path.parent.mkdir(parents=True, exist_ok=True)
+                ass_path.write_text(ass_content, encoding="utf-8")
+                if "ass" in formats:
+                    saved["ass"] = ass_path
+                if want_burn:
+                    burn_path = ass_path
         except Exception as exc:
-            logger.warning("Не удалось собрать субтитры для момента {:.1f}s: {}", moment.start_sec, exc)
-            return None
+            logger.warning("Не удалось собрать субтитры для {}: {}", output_path.name, exc)
+            return burn_path if burn_path and burn_path.exists() else None, saved
+        return burn_path, saved
 
     def _banner_obstacles(
         self,

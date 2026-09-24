@@ -118,3 +118,57 @@ def test_pipeline_degrades_without_llm_and_models(short_video, tmp_path, monkeyp
     assert clips and clips[0].output_path.exists()
     assert clips[0].title.startswith("Момент ")
     assert clips[0].titles == ()
+
+
+def _run_with_stub_words(short_video, tmp_path, monkeypatch, settings):
+    import subtitles.subtitle_service as subtitle_service
+
+    monkeypatch.setattr(subtitle_service, "WhisperTranscriber", _StubTranscriber)
+    out = tmp_path / "out"
+    clips = PipelineRunner(models_dir=tmp_path / "no_models", output_dir=out, llm_provider=_StubLLM()).process_video(
+        short_video, settings
+    )
+    return out, clips
+
+
+def test_srt_and_ass_are_saved_next_to_the_clip_with_timing_from_clip_start(short_video, tmp_path, monkeypatch):
+    out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, _settings())
+    clip = clips[0]
+    srt, ass = clip.output_path.with_suffix(".srt"), clip.output_path.with_suffix(".ass")
+    assert set(clip.subtitle_paths) == {srt, ass}
+
+    srt_text = srt.read_text(encoding="utf-8")
+    assert srt_text.startswith("1\n00:00:00,200 --> 00:00:01,300\nпривет мир\n")   # от начала клипа, не исходника
+    ass_text = ass.read_text(encoding="utf-8")
+    assert "Dialogue: 0,0:00:00.20,0:00:01.30" in ass_text and "PlayResY: 1920" in ass_text
+
+    meta = json.loads(clip.metadata_path.read_text(encoding="utf-8"))
+    assert meta["subtitle_files"] == {"srt": srt.name, "ass": ass.name}
+    assert list(out.glob("_tmp_*")) == []
+
+
+def test_subtitle_files_are_saved_even_without_burn_in(short_video, tmp_path, monkeypatch):
+    settings = _settings().with_field("subtitles", burn_in=False)
+    out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, settings)
+    assert clips[0].output_path.with_suffix(".srt").exists() and clips[0].output_path.with_suffix(".ass").exists()
+
+
+def test_only_requested_formats_are_kept_and_burn_in_leaves_no_temp_ass(short_video, tmp_path, monkeypatch):
+    settings = _settings().with_field("subtitles", export_formats=("srt",))
+    out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, settings)
+    assert clips[0].output_path.with_suffix(".srt").exists()
+    assert not clips[0].output_path.with_suffix(".ass").exists()
+    assert list(out.glob("*.ass")) == [] and list(out.glob("_tmp_*")) == []
+
+
+def test_no_speech_means_no_subtitle_files(short_video, tmp_path, monkeypatch):
+    import subtitles.subtitle_service as subtitle_service
+
+    class _Silent(_StubTranscriber):
+        def transcribe(self, audio_path, language=None):
+            return []
+
+    monkeypatch.setattr(subtitle_service, "WhisperTranscriber", _Silent)
+    out = tmp_path / "out"
+    clips = PipelineRunner(models_dir=tmp_path / "no_models", output_dir=out).process_video(short_video, _settings())
+    assert clips and clips[0].subtitle_paths == () and list(out.glob("*.srt")) == []

@@ -19,3 +19,4 @@ class Clip:
     transcript: str = ""
     metadata_path: Path | None = None
     cover_path: Path | None = None
+    subtitle_paths: tuple[Path, ...] = field(default_factory=tuple)   # SRT/ASS рядом с клипом, тайминг от начала клипа

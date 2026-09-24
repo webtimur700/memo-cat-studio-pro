@@ -44,3 +44,19 @@ def test_group_words_breaks_on_pause():
     ]
     segments = group_words_into_segments(words)
     assert [s.text for s in segments] == ["Привет всем", "сегодня дождь"]
+
+
+def test_timestamps_never_overflow_the_fraction_field():
+    # раньше 1.9996 с давало «00:00:01,1000» — такой SRT плееры и YouTube отвергают
+    assert _seconds_to_srt_timestamp(1.9996) == "00:00:02,000"
+    assert _seconds_to_srt_timestamp(3599.9999) == "01:00:00,000"
+    assert _seconds_to_ass_timestamp(1.996) == "0:00:02.00"
+    assert _seconds_to_ass_timestamp(-0.4) == "0:00:00.00"
+
+
+def test_srt_cues_are_numbered_and_separated_by_blank_line():
+    segments = [
+        SubtitleSegment(words=[WordTiming("раз", 0.0, 0.5)]),
+        SubtitleSegment(words=[WordTiming("два", 1.0, 1.5)]),
+    ]
+    assert render_srt(segments) == "1\n00:00:00,000 --> 00:00:00,500\nраз\n\n2\n00:00:01,000 --> 00:00:01,500\nдва\n"

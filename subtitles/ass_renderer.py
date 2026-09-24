@@ -94,19 +94,20 @@ STYLE_PRESETS: dict[str, SubtitleStyle] = {
 
 
 def _seconds_to_ass_timestamp(seconds: float) -> str:
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds % 60
-    centiseconds = int(round((secs - int(secs)) * 100))
-    return f"{hours:d}:{minutes:02d}:{int(secs):02d}.{centiseconds:02d}"
+    # округляем ВСЕ время в сотые доли сразу: раздельное округление давало «0:00:01.100» при 1.996 с
+    total_cs = max(0, int(round(seconds * 100)))
+    hours, rest = divmod(total_cs, 360000)
+    minutes, rest = divmod(rest, 6000)
+    secs, centiseconds = divmod(rest, 100)
+    return f"{hours:d}:{minutes:02d}:{secs:02d}.{centiseconds:02d}"
 
 
 def _seconds_to_srt_timestamp(seconds: float) -> str:
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds % 60
-    milliseconds = int(round((secs - int(secs)) * 1000))
-    return f"{hours:02d}:{minutes:02d}:{int(secs):02d},{milliseconds:03d}"
+    total_ms = max(0, int(round(seconds * 1000)))
+    hours, rest = divmod(total_ms, 3_600_000)
+    minutes, rest = divmod(rest, 60_000)
+    secs, milliseconds = divmod(rest, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
 
 
 def _build_karaoke_text(segment: SubtitleSegment, style: SubtitleStyle) -> str:
