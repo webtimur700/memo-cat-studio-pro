@@ -83,10 +83,29 @@ sudo dnf install -y \
     ffmpeg ffmpeg-libs libatomic \
     python3.12 python3.12-devel python3-pip \
     libva libva-utils \
-    vulkan-tools mesa-vulkan-drivers mesa-va-drivers \
+    vulkan-tools mesa-vulkan-drivers \
     qt6-qtbase-devel qt6-qtmultimedia qt6-qtmultimedia-devel \
     gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-libav
 ok "Системные зависимости установлены"
+
+# ------------------------------------------------------------
+# ШАГ 2b: аппаратное кодирование H.264 (VAAPI, Radeon). Штатный mesa-va-drivers в Fedora собран
+# без H.264/HEVC (патенты), поэтому нужен mesa-va-drivers-freeworld из RPM Fusion. Без него экспорт
+# автоматически идёт через libx264 (в 4-5 раз медленнее), поэтому сбой здесь не фатален.
+# ------------------------------------------------------------
+if rpm -q mesa-va-drivers-freeworld >/dev/null 2>&1; then
+    ok "mesa-va-drivers-freeworld уже установлен"
+elif rpm -q mesa-va-drivers >/dev/null 2>&1; then
+    log "Заменяю mesa-va-drivers на mesa-va-drivers-freeworld (H.264 через VAAPI)"
+    sudo dnf swap -y mesa-va-drivers mesa-va-drivers-freeworld || warn "Не удалось заменить драйвер VAAPI — экспорт будет через libx264"
+else
+    sudo dnf install -y mesa-va-drivers-freeworld || warn "Не удалось установить mesa-va-drivers-freeworld — экспорт будет через libx264"
+fi
+if vainfo 2>/dev/null | grep -q "VAProfileH264.*VAEntrypointEncSlice"; then
+    ok "VAAPI: аппаратное кодирование H.264 доступно (VAEntrypointEncSlice)"
+else
+    warn "VAAPI: кодирования H.264 нет (vainfo не показывает VAEntrypointEncSlice для H264) — экспорт пойдёт через libx264"
+fi
 
 # ------------------------------------------------------------
 # ШАГ 3: виртуальное окружение (строго внутри папки проекта)
