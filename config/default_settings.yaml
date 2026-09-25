@@ -24,6 +24,7 @@ viral_score:
     audio_event: 0.25       # лай/мяу/смех, обнаруженные event_classifier
     face_prominence: 0.15   # крупность морды животного в кадре (MediaPipe)
     speech_presence: 0.15
+    motion_events: 0.20     # бонус за прыжки/падения/рывки (vision/pose_motion_analyzer.py): плотный анализ только для лучших окон
 
 reframe:
   target_resolution: [1080, 1920]

@@ -1,11 +1,19 @@
 """Формула Viral Score (Функция 3).
 
-В конфиге (config/default_settings.yaml) заложены веса для 5 сигналов — motion_intensity,
-scene_change, audio_event, face_prominence, speech_presence. Сейчас считаются motion, scene,
-face и (если найден YAMNet, audio/event_classifier.py) audio_event — лай/мяуканье/смех.
-Веса нормируются на сумму РЕАЛЬНО использованных сигналов: нет YAMNet или у видео нет звука —
-audio_event выпадает из формулы, а не занижает все оценки на его долю. speech_presence пока
-не считается (нужен VAD).
+В конфиге (config/default_settings.yaml) заложены веса для сигналов — motion_intensity, scene_change,
+audio_event, face_prominence, speech_presence, motion_events. Считаются: motion, scene, face (животное в кадре),
+audio_event (YAMNet: лай/мяуканье/смех, audio/event_classifier.py) и motion_events (прыжки, падения, рывки по трекам
+YOLO, vision/pose_motion_analyzer.py). speech_presence пока не считается (нужен VAD).
+
+Веса нормируются на сумму РЕАЛЬНО использованных сигналов: нет YAMNet или у видео нет звука — audio_event
+выпадает из формулы, а не занижает все оценки на его долю.
+
+motion_events — БОНУС, а не член нормировки: плотный анализ движения (6 кадров/с) дорог и делается только для
+лучших окон, поэтому у остальных его нет. Если бы вес входил в знаменатель, окно без прыжков, но с проверкой,
+теряло бы очки относительно непроверенных. Бонус только добавляет: score = (сумма вкладов + w·v) / сумма весов.
+
+compute_score_breakdown возвращает не только число, но и вклад каждого сигнала в очках — по нему интерфейс
+объясняет, почему выбран момент.
 """
 
 from __future__ import annotations
@@ -16,6 +24,14 @@ from core.entities.settings import ViralScoreSettings
 
 SCENE_CHANGE_SATURATION_COUNT = 2
 
+SIGNAL_LABELS = {
+    "motion": "Движение",
+    "presence": "Животное в кадре",
+    "scene": "Смены сцен",
+    "audio": "Звуковые события",
+    "motion_events": "Прыжки и падения",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ScoreInputs:
@@ -23,24 +39,53 @@ class ScoreInputs:
     detection_presence: float     # 0..1, доля кадров окна с детекцией
     scene_change_count: int
     audio_event: float | None = None   # 0..1, звуковые события окна; None — классификатор недоступен
+    motion_events: float = 0.0         # 0..1, прыжки/падения/рывки окна (бонус); 0 — не найдены или не проверялось
+    audio_detail: str = ""             # какие именно звуки («лай, смех») — для показа пользователю
+    motion_events_detail: str = ""     # «2 прыжка, падение»
+
+
+@dataclass(frozen=True, slots=True)
+class SignalPart:
+    key: str
+    label: str
+    value: float          # 0..1: насколько выражен сигнал
+    weight: float         # вес из настроек
+    points: float         # вклад в итоговые 0..100
+    detail: str = ""
+    bonus: bool = False   # не входит в нормировку (motion_events)
+
+
+@dataclass(frozen=True, slots=True)
+class ScoreBreakdown:
+    score: int
+    parts: tuple[SignalPart, ...]
+
+    def part(self, key: str) -> SignalPart | None:
+        return next((p for p in self.parts if p.key == key), None)
+
+
+def compute_score_breakdown(inputs: ScoreInputs, weights: ViralScoreSettings) -> ScoreBreakdown:
+    scene_change_score = min(1.0, inputs.scene_change_count / SCENE_CHANGE_SATURATION_COUNT)
+    signals: list[tuple[str, float, float, str, bool]] = [
+        ("motion", inputs.motion_intensity, weights.weight_motion_intensity, "", False),
+        ("presence", inputs.detection_presence, weights.weight_face_prominence, "", False),
+        ("scene", scene_change_score, weights.weight_scene_change,
+         f"{inputs.scene_change_count} смен(ы)" if inputs.scene_change_count else "", False),
+    ]
+    if inputs.audio_event is not None:
+        signals.append(("audio", inputs.audio_event, weights.weight_audio_event, inputs.audio_detail, False))
+    signals.append(("motion_events", inputs.motion_events, weights.weight_motion_events, inputs.motion_events_detail, True))
+
+    used_weight_sum = sum(w for _, _, w, _, bonus in signals if not bonus)
+    if used_weight_sum <= 0:
+        return ScoreBreakdown(0, ())
+    parts = tuple(
+        SignalPart(key, SIGNAL_LABELS[key], value, weight, weight * value / used_weight_sum * 100, detail, bonus)
+        for key, value, weight, detail, bonus in signals
+    )
+    total = sum(p.points for p in parts)
+    return ScoreBreakdown(max(0, min(100, round(total))), parts)
 
 
 def compute_viral_score(inputs: ScoreInputs, weights: ViralScoreSettings) -> int:
-    scene_change_score = min(1.0, inputs.scene_change_count / SCENE_CHANGE_SATURATION_COUNT)
-
-    used_weight_sum = (
-        weights.weight_motion_intensity + weights.weight_scene_change + weights.weight_face_prominence
-    )
-    if inputs.audio_event is not None:
-        used_weight_sum += weights.weight_audio_event
-    if used_weight_sum <= 0:
-        return 0
-
-    raw = (
-        weights.weight_motion_intensity * inputs.motion_intensity
-        + weights.weight_scene_change * scene_change_score
-        + weights.weight_face_prominence * inputs.detection_presence
-        + weights.weight_audio_event * (inputs.audio_event or 0.0)
-    )
-    normalized = raw / used_weight_sum
-    return max(0, min(100, round(normalized * 100)))
+    return compute_score_breakdown(inputs, weights).score

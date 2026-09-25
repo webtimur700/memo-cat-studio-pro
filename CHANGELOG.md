@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### Добавлено — прыжки, падения и рывки в Viral Score
+- `vision/motion_events.py`: плотный трек (6 кадров/с) у лучших окон с животным → `PoseMotionAnalyzer`; события у монтажных
+  склеек отбрасываются; `FrameExtractor.dense_frames_in_range` (последовательное чтение вместо seek на каждый кадр)
+- Вес `viral_score.weights.motion_events` (0.20) — бонус к оценке окна, не входит в знаменатель нормировки
+- `scoring.compute_score_breakdown`: вклад каждого сигнала в очках (основа объяснения оценки); `WindowScore.inputs/breakdown`
+- Отбор на `myvideo.mp4`: совпали 5 из 10 моментов; что проверено и что шумит — `docs/motion_events.md`,
+  `scripts/compare_motion_scoring.py`
+
 ### Добавлено — локальная база SQLite: настройки, проекты, история
 - `database/db.py` (версионируемые миграции, `PRAGMA user_version`, `database/memo_cat.db`, в git не попадает),
   `database/repositories/settings_repository.py` (в базе только поля, изменённые относительно `default_settings.yaml`:

@@ -29,6 +29,7 @@ from typing import Callable, Sequence
 from core.entities.detection import Detection
 from core.entities.moment import Moment
 from core.entities.settings import UserSettings
+from scoring.viral_score_service import ScoreBreakdown, ScoreInputs
 
 MIN_WINDOW_SEC = 1.0
 GAP_BRIDGE_SCORE_RATIO = 0.85       # слабое окно между двумя сильными склеивается, если оно не хуже 85% порога
@@ -47,6 +48,8 @@ class WindowScore:
     viral_score: int
     motion_intensity: float
     detections: tuple[Detection, ...] = ()
+    inputs: ScoreInputs | None = None            # из чего сложилась оценка (для пересчёта и для объяснения пользователю)
+    breakdown: ScoreBreakdown | None = None      # вклад каждого сигнала в очках
 
 
 @dataclass(frozen=True, slots=True)

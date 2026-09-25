@@ -114,3 +114,11 @@ def test_real_yamnet_runs_on_cpu_and_tone_is_not_an_animal_event(tmp_path):
     assert timeline.frame_scores.size > 55
     assert elapsed < 10.0                                    # 30 с звука — доли секунды на CPU
     assert timeline.frame_scores.max() < 0.5                 # чистый тон — не лай и не мяуканье
+
+
+def test_labels_between_names_the_sounds_in_russian(classifier, tmp_path):
+    video = _video(tmp_path / "v.mp4", 12.0)
+    timeline = classifier({4: (1, 0.9), 5: (1, 0.8), 9: (2, 0.7)}).analyze_video(video)   # два лая и мяуканье
+    labels = timeline.labels_between(0, 12)
+    assert labels == "лай, мяуканье"
+    assert timeline.labels_between(4.3, 5.3) == "мяуканье" and timeline.labels_between(0, 1) == ""

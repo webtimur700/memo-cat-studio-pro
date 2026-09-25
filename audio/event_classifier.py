@@ -33,6 +33,14 @@ EVENT_CLASS_WEIGHTS: dict[str, float] = {
     "Laughter": 1.0, "Baby laughter": 1.0, "Giggle": 1.0, "Belly laugh": 1.0, "Chuckle, chortle": 0.9,
     "Snicker": 0.9, "Roaring cats (lions, tigers)": 0.7, "Squeal": 0.5, "Bird vocalization, bird call, bird song": 0.4,
 }
+# как называть звук пользователю (в объяснении оценки момента)
+CLASS_LABELS_RU: dict[str, str] = {
+    "Bark": "лай", "Yip": "тявканье", "Howl": "вой", "Growling": "рычание", "Whimper (dog)": "скулёж", "Dog": "собака",
+    "Meow": "мяуканье", "Purr": "мурлыканье", "Caterwaul": "кошачий вопль", "Hiss": "шипение", "Cat": "кошка",
+    "Laughter": "смех", "Baby laughter": "детский смех", "Giggle": "хихиканье", "Belly laugh": "хохот",
+    "Chuckle, chortle": "смешок", "Snicker": "смешок", "Roaring cats (lions, tigers)": "рёв кошачьих",
+    "Squeal": "визг", "Bird vocalization, bird call, bird song": "птичье пение",
+}
 # вероятность, при которой звук считается «явным событием» (YAMNet редко даёт больше 0.7-0.8)
 SATURATION_PROB = 0.5
 
@@ -54,6 +62,17 @@ class AudioEventTimeline:
         if window.size == 0:
             return 0.0
         return float(np.sort(window)[-3:].mean())
+
+    def labels_between(self, start_sec: float, end_sec: float, min_score: float = 0.3, limit: int = 2) -> str:
+        """Какие звуки слышны в интервале: «лай, смех» (самые частые среди заметных окон; пусто — событий нет)."""
+        first = max(0, int((start_sec - FRAME_LEN_SEC / 2) / FRAME_HOP_SEC))
+        last = min(self.frame_scores.size, int(np.ceil((end_sec - FRAME_LEN_SEC / 2) / FRAME_HOP_SEC)) + 1)
+        counts: dict[str, float] = {}
+        for k in range(first, last):
+            if self.frame_scores[k] >= min_score and self.top_classes[k]:
+                label = CLASS_LABELS_RU.get(self.top_classes[k], self.top_classes[k])
+                counts[label] = counts.get(label, 0.0) + float(self.frame_scores[k])
+        return ", ".join(sorted(counts, key=lambda k: -counts[k])[:limit])
 
     def dominant_class_between(self, start_sec: float, end_sec: float) -> str:
         first = max(0, int((start_sec - FRAME_LEN_SEC / 2) / FRAME_HOP_SEC))

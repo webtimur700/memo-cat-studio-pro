@@ -19,7 +19,7 @@ faster-whisper) могут быть не скачаны, LM Studio может б
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -46,7 +46,7 @@ from export.dynamic_crop import CropSample
 from export.export_service import ExportPlan, ExportService
 from llm.content_generator import ClipContent, generate_clip_content
 from pipeline.shared_models import SharedModels
-from scoring.viral_score_service import ScoreInputs, compute_viral_score
+from scoring.viral_score_service import ScoreInputs, compute_score_breakdown
 from subtitles.ass_renderer import estimate_subtitle_band_height, render_ass, render_srt
 from subtitles.subtitle_service import group_words_into_segments
 from video.ffmpeg_wrapper import FFmpegWrapper
@@ -55,10 +55,13 @@ from video.ingestion_service import IngestionService
 from video.scene_detector import SceneDetector
 from vision.smart_crop import CropWindow, SmartCropPlanner
 from vision.mediapipe_face import AnimalHeadRegionEstimator
+from vision.motion_events import analyze_window_motion
 from vision.tracker import ObjectTracker
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WINDOW_SEC = 5.0
+MOTION_CANDIDATE_RATIO = 0.6   # плотный анализ движения — лучшим 60% окон, но не больше MOTION_MAX_WINDOWS
+MOTION_MAX_WINDOWS = 120
 MIN_PAUSE_SEC = 0.35          # промежуток между словами, считающийся паузой (можно резать)
 SPEECH_EDGE_MARGIN_SEC = 0.15
 MIN_RELIABLE_WORDS = 3          # меньше слов при неуверенном определении языка — считаем шумом, а не речью
@@ -170,6 +173,7 @@ class PipelineRunner:
         window_scores = self._scan_windows(
             video_path, source.duration_sec, detector, scenes, audio_events, settings.viral_score
         )
+        window_scores = self._add_motion_events(video_path, window_scores, detector, scenes, settings.viral_score)
 
         emit("cutting")
         scene_boundaries = sorted(
@@ -211,6 +215,43 @@ class PipelineRunner:
             logger.warning("Звуковые события недоступны для {}: {} — оценка без звука", video_path.name, exc)
             return None
         return timeline if timeline.frame_scores.size else None
+
+    def _add_motion_events(
+        self,
+        video_path: Path,
+        windows: list[WindowScore],
+        detector: _DetectorHandle,
+        scenes: list[SceneSegment],
+        weights: ViralScoreSettings,
+    ) -> list[WindowScore]:
+        """Прыжки/падения/рывки (vision/pose_motion_analyzer.py): плотный трек (6 кадров/с) снимается только у лучших
+        окон с животным в кадре — на весь ролик это ~45 мс/кадр × 6 кадров/с. Итог — бонус к оценке окна
+        (см. scoring/viral_score_service.py); окна без проверки не меняются."""
+        if not detector.available or weights.weight_motion_events <= 0 or not windows:
+            return windows
+        candidates = [
+            i for i, w in sorted(enumerate(windows), key=lambda iw: -iw[1].viral_score)
+            if w.inputs is not None and w.inputs.detection_presence > 0
+        ][: min(MOTION_MAX_WINDOWS, max(1, round(MOTION_CANDIDATE_RATIO * len(windows))))]
+        cuts = sorted({s.start_sec for s in scenes} | {s.end_sec for s in scenes})
+        result = list(windows)
+        found = 0
+        try:
+            with FrameExtractor(video_path) as extractor:
+                for i in candidates:
+                    window = windows[i]
+                    summary = analyze_window_motion(extractor, detector.detector, window.start_sec, window.end_sec, cuts)
+                    if summary.value <= 0:
+                        continue
+                    found += 1
+                    inputs = replace(window.inputs, motion_events=summary.value, motion_events_detail=summary.detail)
+                    breakdown = compute_score_breakdown(inputs, weights)
+                    result[i] = replace(window, inputs=inputs, breakdown=breakdown, viral_score=breakdown.score)
+        except Exception as exc:
+            logger.warning("Анализ прыжков и падений недоступен для {}: {} — оценка без него", video_path.name, exc)
+            return windows
+        logger.info("Прыжки/падения: проверено {} окон, события найдены в {}", len(candidates), found)
+        return result
 
     def _detect_scenes_safely(self, video_path: Path) -> list[SceneSegment]:
         try:
@@ -272,21 +313,22 @@ class PipelineRunner:
                 )
                 scene_change_count = sum(1 for s in scenes if window_start < s.start_sec < window_end)
 
-                score = compute_viral_score(
-                    ScoreInputs(
-                        motion_intensity, detection_presence, scene_change_count,
-                        audio_event=audio_events.score_between(window_start, window_end) if audio_events is not None else None,
-                    ),
-                    default_weights,
+                inputs = ScoreInputs(
+                    motion_intensity, detection_presence, scene_change_count,
+                    audio_event=audio_events.score_between(window_start, window_end) if audio_events is not None else None,
+                    audio_detail=audio_events.labels_between(window_start, window_end) if audio_events is not None else "",
                 )
+                breakdown = compute_score_breakdown(inputs, default_weights)
 
                 results.append(
                     WindowScore(
                         start_sec=window_start,
                         end_sec=window_end,
-                        viral_score=score,
+                        viral_score=breakdown.score,
                         motion_intensity=motion_intensity,
                         detections=tuple(detections_in_window[:5]),
+                        inputs=inputs,
+                        breakdown=breakdown,
                     )
                 )
                 window_start = window_end

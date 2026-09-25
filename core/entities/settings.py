@@ -34,6 +34,7 @@ class ViralScoreSettings:
     weight_audio_event: float = 0.25
     weight_face_prominence: float = 0.15
     weight_speech_presence: float = 0.15
+    weight_motion_events: float = 0.20   # бонус за прыжки/падения/рывки (не входит в нормировку, см. scoring/)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +204,7 @@ class UserSettings:
                 weight_audio_event=weights_raw.get("audio_event", 0.25),
                 weight_face_prominence=weights_raw.get("face_prominence", 0.15),
                 weight_speech_presence=weights_raw.get("speech_presence", 0.15),
+                weight_motion_events=weights_raw.get("motion_events", 0.20),
             ),
             reframe=ReframeSettings(
                 target_width=reframe_raw.get("target_resolution", [1080, 1920])[0],

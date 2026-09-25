@@ -70,6 +70,29 @@ class FrameExtractor:
             yield current, frame
             current += step_sec
 
+    def dense_frames_in_range(
+        self, start_sec: float, end_sec: float, sample_fps: float
+    ) -> Iterator[tuple[float, np.ndarray]]:
+        """Кадры диапазона с частотой sample_fps ПОСЛЕДОВАТЕЛЬНЫМ чтением (позиция задаётся один раз, лишние кадры
+        пропускаются grab'ом). frames_in_range делает seek на каждый кадр — на 6-8 fps это в разы дороже; нужен
+        для анализа движения (прыжки/падения), где между кадрами должно быть 0.1-0.2 с."""
+        if sample_fps <= 0:
+            raise ValueError("sample_fps должен быть положительным")
+        source_fps = self.fps or 30.0
+        step = max(1.0, source_fps / sample_fps)
+        self._capture.set(cv2.CAP_PROP_POS_MSEC, start_sec * 1000.0)
+        next_index, index = 0.0, 0
+        while True:
+            timestamp = start_sec + index / source_fps
+            if timestamp >= end_sec or not self._capture.grab():
+                break
+            if index >= next_index:
+                success, frame = self._capture.retrieve()
+                if success and frame is not None:
+                    yield timestamp, frame
+                next_index += step
+            index += 1
+
     def best_frame_for_cover(self, start_sec: float, end_sec: float) -> tuple[float, np.ndarray]:
         """Эвристика выбора "лучшего" кадра для обложки (Функция 11):
         берёт кадр с максимальной резкостью (variance of Laplacian) среди
