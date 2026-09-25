@@ -221,3 +221,62 @@ def test_music_disabled_in_settings_ignores_library(short_video, tmp_path, monke
     settings = _settings().with_field("audio", music_enabled=False, music_library_path=str(library))
     out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, settings)
     assert json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))["music_file"] is None
+
+
+class _DeadLLM:
+    """Как ManagedLMStudio, которая не смогла подготовить модель: complete() бросает, причина — в .issue."""
+
+    def __init__(self, issue):
+        self.issue = issue
+        self.calls = 0
+
+    def complete(self, *args, **kwargs):
+        from llm.lm_studio_provider import LLMUnavailableError
+
+        self.calls += 1
+        raise LLMUnavailableError("Не удалось подготовить модель LM Studio")
+
+    def list_models(self):
+        return []
+
+
+def _issue():
+    from core.entities.llm_issue import LLMIssue
+
+    return LLMIssue("no_memory", "LLM не загружена: нужно ~14.4 ГиБ, свободно 13.3 ГиБ.", "Уменьшите запас в настройках.",
+                    need_gib=14.4, free_gib=13.3, reserve_gib=6.0)
+
+
+def test_llm_failure_is_reported_in_progress_clip_and_json_for_every_clip(short_video, tmp_path, monkeypatch):
+    import subtitles.subtitle_service as subtitle_service
+
+    monkeypatch.setattr(subtitle_service, "WhisperTranscriber", _StubTranscriber)
+    settings = _settings()
+    llm = _DeadLLM(_issue())
+    events = []
+    runner = PipelineRunner(models_dir=tmp_path / "no_models", output_dir=tmp_path / "out", llm_provider=llm)
+    clips = runner.process_video(short_video, settings, progress=lambda stage, data: events.append((stage, data)))
+
+    assert len(clips) >= 1
+    warnings = [d for s, d in events if s == "llm_warning"]
+    assert len(warnings) == 1 and warnings[0]["issue"]["need_gib"] == 14.4       # предупреждение один раз на видео
+    calls = llm.calls
+    assert calls >= 1
+    later = runner._clip_llm_issue(runner._generate_content("ещё один клип того же видео", None))
+    assert llm.calls == calls and later.kind == "no_memory"                     # после отказа LLM больше не дёргаем, причина остаётся
+    for clip in clips:                                                          # причина есть у клипа
+        assert clip.title.startswith("Момент ") and clip.llm_issue.kind == "no_memory"
+        data = json.loads(clip.metadata_path.read_text(encoding="utf-8"))
+        assert data["llm_issue"]["free_gib"] == 13.3 and "запас" in data["llm_issue"]["hint"]
+
+
+def test_working_llm_leaves_no_issue(short_video, tmp_path, monkeypatch):
+    import subtitles.subtitle_service as subtitle_service
+
+    monkeypatch.setattr(subtitle_service, "WhisperTranscriber", _StubTranscriber)
+    events = []
+    clips = PipelineRunner(models_dir=tmp_path / "no_models", output_dir=tmp_path / "out", llm_provider=_StubLLM()).process_video(
+        short_video, _settings(), progress=lambda stage, data: events.append(stage)
+    )
+    assert clips[0].llm_issue is None and "llm_warning" not in events
+    assert json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))["llm_issue"] is None

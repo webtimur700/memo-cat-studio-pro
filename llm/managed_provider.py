@@ -18,6 +18,7 @@ from dataclasses import replace
 
 from loguru import logger
 
+from core.entities.llm_issue import LLMIssue
 from llm import lm_studio_api as api
 from llm.lm_studio_provider import LLMUnavailableError, LMStudioConfig, LMStudioProvider
 from llm.model_selector import (
@@ -36,6 +37,7 @@ class ManagedLMStudio:
         config: LMStudioConfig | None = None,
         reserve_mib: float = DEFAULT_PIPELINE_RESERVE_MIB,
         mem_reader=read_mem_available_mib,
+        on_issue=None,
     ) -> None:
         self._config = config or LMStudioConfig()
         self._reserve_mib = reserve_mib
@@ -48,6 +50,41 @@ class ManagedLMStudio:
         self._thread: threading.Thread | None = None
         self.selection: Selection | None = None
         self._loaded_by_us: list[str] = []
+        self.issue: LLMIssue | None = None      # почему модели нет (None — всё в порядке или ещё не пробовали)
+        self._on_issue = on_issue               # колбэк(LLMIssue | None): из фонового потока — слушатель сам переходит в UI-поток
+
+    def set_reserve_mib(self, reserve_mib: float) -> None:
+        """Новый запас под пайплайн из настроек; действует при следующем выборе модели."""
+        self._reserve_mib = reserve_mib
+
+    def _set_issue(self, issue: LLMIssue | None) -> None:
+        self.issue = issue
+        if self._on_issue is not None:
+            try:
+                self._on_issue(issue)
+            except Exception as exc:   # слушатель не должен ломать подготовку модели
+                logger.warning("LLM: слушатель причины отказал: {}", exc)
+
+    def _issue_from_error(self, exc: Exception) -> LLMIssue:
+        if isinstance(exc, NoSuitableModelError):
+            if exc.need_mib is not None:
+                need, free, reserve = exc.need_mib / 1024, (exc.available_mib or 0) / 1024, (exc.reserve_mib or 0) / 1024
+                return LLMIssue(
+                    "no_memory",
+                    f"LLM не загружена: самой лёгкой модели ({exc.lightest_key}) нужно ~{need:.1f} ГиБ, "
+                    f"свободно {free:.1f} ГиБ при запасе {reserve:.1f} ГиБ под пайплайн.",
+                    "Закройте лишние программы и контейнеры (например ollama, open-webui), уменьшите «Запас памяти под "
+                    "пайплайн» в настройках или скачайте в LM Studio небольшую модель — она будет использована как запасная. "
+                    "Пока клипы получают заголовки по умолчанию.",
+                    need_gib=need, free_gib=free, reserve_gib=reserve,
+                )
+            return LLMIssue("no_models", "В LM Studio нет чат-моделей (только embedding).",
+                            "Скачайте LLM во вкладке Discover в LM Studio. Пока клипы получают заголовки по умолчанию.")
+        return LLMIssue(
+            "unavailable", f"LM Studio недоступна на {self._config.base_url} ({exc}).",
+            "Запустите LM Studio и включите локальный сервер (Developer → Start Server), затем обработайте видео снова. "
+            "Пока клипы получают заголовки по умолчанию.",
+        )
 
     # ------------------------------------------------------------------ учёт пользователей
     def begin_use(self) -> None:
@@ -97,10 +134,12 @@ class ManagedLMStudio:
                 provider = self._prepare_unlocked()
                 with self._lock:
                     self._provider = provider
+                self._set_issue(None)
             except (api.LMStudioAdminError, NoSuitableModelError) as exc:
                 with self._lock:
                     self._error = f"Не удалось подготовить модель LM Studio: {exc}"
                 logger.warning("{}", self._error)
+                self._set_issue(self._issue_from_error(exc))
 
     def _prepare_unlocked(self) -> LMStudioProvider:
         base_url = self._config.base_url
@@ -168,6 +207,7 @@ class ManagedLMStudio:
             self._provider = None
             self._error = None
             self._thread = None
+        self.issue = None
         for instance in instances:
             try:
                 api.unload_model(self._config.base_url, instance)

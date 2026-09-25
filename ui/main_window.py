@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from loguru import logger
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.entities.llm_issue import LLMIssue
 from core.entities.settings import UserSettings
 from llm.lm_studio_provider import LMStudioConfig
 from llm.managed_provider import ManagedLMStudio
@@ -46,6 +47,8 @@ EXPORT_OUTPUT_DIR = PROJECT_ROOT / "export" / "output"
 
 
 class MainWindow(QMainWindow):
+    _llm_issue_found = Signal(object)   # LLMIssue | None: из фонового потока подготовки модели в UI-поток
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Memo Cat AI Studio Pro")
@@ -65,7 +68,11 @@ class MainWindow(QMainWindow):
             self._settings.batch.max_concurrent_videos, self._start_job, on_idle=self._on_queue_idle
         )
         # одна LLM на все задачи: модель выбирается по рейтингу/памяти и загружается один раз (.env: LM_STUDIO_*)
-        self._llm = ManagedLMStudio(LMStudioConfig.from_env(PROJECT_ROOT / ".env"))
+        self._llm = ManagedLMStudio(
+            LMStudioConfig.from_env(PROJECT_ROOT / ".env"),
+            reserve_mib=self._settings.llm.pipeline_reserve_gb * 1024,
+            on_issue=self._llm_issue_found.emit,
+        )
 
         central = QWidget()
         central.setObjectName("centralWidget")
@@ -134,6 +141,7 @@ class MainWindow(QMainWindow):
             if not jobs:
                 return
             if self._scheduler.is_idle:
+                self.batch_view.set_llm_banner(None)   # новая партия — причина прошлой больше не актуальна
                 self._llm.begin_use()   # пока идёт анализ, модель грузится в фоне; выгрузка — когда очередь опустеет
             self.batch_view.add_jobs([(job_id, path.name) for job_id, path in jobs])
             for job_id, path in jobs:
@@ -144,10 +152,12 @@ class MainWindow(QMainWindow):
                         self._scheduler.running_count, self._scheduler.waiting_count)
 
         self.project_view.videos_added.connect(on_videos_added)
+        self._llm_issue_found.connect(self.batch_view.set_llm_banner)
 
         def on_settings_saved(updated_settings: UserSettings) -> None:
             self._settings = updated_settings
             self._scheduler.set_max_concurrent(updated_settings.batch.max_concurrent_videos)
+            self._llm.set_reserve_mib(updated_settings.llm.pipeline_reserve_gb * 1024)
             self._cleaner = self._make_cleaner()
             logger.info(
                 "Настройки обновлены: threshold={}, quality={}",
@@ -244,6 +254,12 @@ class MainWindow(QMainWindow):
             threading.Thread(target=self._llm.release_if_unused, name="lm-studio-release", daemon=True).start()
 
     def _on_pipeline_stage_changed(self, job_id: str, stage: str, data: dict) -> None:
+        if stage == "llm_warning":
+            issue = LLMIssue.from_dict(data.get("issue"))
+            if issue is not None:
+                self.batch_view.set_job_warning(job_id, issue)
+                self.batch_view.set_llm_banner(issue)
+            return
         stage_map = {
             "analyzing": JobStage.ANALYZING,
             "scoring": JobStage.SCORING,

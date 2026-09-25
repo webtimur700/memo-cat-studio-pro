@@ -30,6 +30,7 @@ from loguru import logger
 from audio.event_classifier import AudioEventTimeline
 from audio.music_mixer import list_tracks, mix_music, pick_track, probe_duration, speech_intervals
 from core.entities.clip import Clip
+from core.entities.llm_issue import LLMIssue
 from core.entities.detection import BoundingBox, Detection, is_animal_class
 from core.entities.moment import Moment
 from core.entities.scene_segment import SceneSegment
@@ -138,6 +139,8 @@ class PipelineRunner:
         # YOLO и Whisper: если раннер создан очередью — модели общие на все видео, иначе свои на этот раннер
         self._shared = shared_models or SharedModels(self._models_dir)
         self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
+        self._llm_issue: LLMIssue | None = None   # почему LLM не сработала (для всех клипов этого видео)
+        self._emit: Callable[..., None] = lambda stage, **data: None
         # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
         # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
         self._word_cache: list[tuple[float, float, list[WordTiming], str | None]] = []
@@ -154,6 +157,8 @@ class PipelineRunner:
                 progress(stage, data)
 
         self._llm_unavailable = False
+        self._llm_issue = None
+        self._emit = emit
         self._word_cache = []
         emit("analyzing")
         source = IngestionService().ingest(video_path)
@@ -344,6 +349,7 @@ class PipelineRunner:
         transcript = " ".join(w.text for w in words)
         cover_frame = self._pick_cover_frame(video_path, moment)
         content = self._generate_content(transcript, cover_frame)
+        llm_issue = self._clip_llm_issue(content)
         title = content.titles[0] if content.titles else self._default_title(moment)
         cover_path = self._generate_cover(cover_frame, moment, crop_samples, title, output_path, settings)
         metadata_path = self._write_metadata(
@@ -351,6 +357,7 @@ class PipelineRunner:
             transcript_original=original_transcript, language=self.last_moment_language,
             subtitle_files=subtitle_files,
             music_file=music_file,
+            llm_issue=llm_issue,
         )
 
         return Clip(
@@ -364,6 +371,7 @@ class PipelineRunner:
             metadata_path=metadata_path,
             cover_path=cover_path,
             subtitle_paths=tuple(subtitle_files.values()),
+            llm_issue=llm_issue,
         )
 
     # ------------------------------------------------------------------
@@ -411,14 +419,32 @@ class PipelineRunner:
         результат (клип получает заголовок по умолчанию), пайплайн не падает.
         """
         if self._llm_provider is None or self._llm_unavailable:
-            return ClipContent()
+            return ClipContent()   # причина уже записана в self._llm_issue и показана
         image_jpeg = None
         if cover_frame is not None and getattr(self._llm_provider, "supports_vision", False):
             image_jpeg = frame_to_jpeg(cover_frame[1])
         content = generate_clip_content(self._llm_provider, transcript, image_jpeg=image_jpeg)
-        if content.is_empty and content.errors:
-            self._llm_unavailable = True
+        if content.errors:
+            failed_completely = content.is_empty
+            issue = (getattr(self._llm_provider, "issue", None) if failed_completely else None) or LLMIssue.from_errors(
+                content.errors, partial=not failed_completely
+            )
+            if self._llm_issue is None or (self._llm_issue.kind == "partial" and failed_completely):
+                self._llm_issue = issue
+                self._emit("llm_warning", issue=issue.to_dict())
+            if failed_completely:
+                self._llm_unavailable = True
         return content
+
+    def _clip_llm_issue(self, content: ClipContent) -> LLMIssue | None:
+        """Что показать в карточке клипа: причина, если заголовков от LLM нет или часть данных не получена."""
+        if self._llm_provider is None or (content.titles and not content.errors):
+            return None
+        if self._llm_issue is not None:
+            return self._llm_issue
+        if content.errors:
+            return LLMIssue.from_errors(content.errors, partial=bool(content.titles))
+        return LLMIssue("request_failed", "LLM вернула пустой ответ.", "Проверьте модель в LM Studio и обработайте видео снова.")
 
     def _pick_cover_frame(self, video_path: Path, moment: Moment) -> tuple[float, np.ndarray] | None:
         """Самый резкий кадр момента (нужен и LLM как картинка, и обложке)."""
@@ -487,6 +513,7 @@ class PipelineRunner:
         language: str | None = None,
         subtitle_files: dict[str, Path] | None = None,
         music_file: str | None = None,
+        llm_issue: LLMIssue | None = None,
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
         payload = {
@@ -504,6 +531,7 @@ class PipelineRunner:
             "transcript_original": transcript_original if transcript_original != transcript else "",
             "speech_language": language,
             "music_file": music_file,
+            "llm_issue": llm_issue.to_dict() if llm_issue else None,
             "subtitle_files": {fmt: path.name for fmt, path in (subtitle_files or {}).items()},
             "llm_errors": list(content.errors),
             "llm_model": self._llm_model_name(),

@@ -17,6 +17,9 @@ class _FakeLLM:
     def __init__(self, *_a, **_k):
         self.begin = self.end = self.released = 0
 
+    def set_reserve_mib(self, value):
+        self.reserve = value
+
     def begin_use(self):
         self.begin += 1
 
@@ -182,3 +185,48 @@ def test_low_disk_cleans_temp_silently_but_asks_before_deleting_clips(window, tm
     window._confirm_delete = lambda groups, free: True
     window._ensure_disk_space(queue_idle=True)
     assert not clip.exists()               # подтвердил — удалено
+
+
+def test_llm_problem_is_shown_in_queue_banner_row_and_clip_card(window, monkeypatch):
+    from core.entities.llm_issue import LLMIssue
+    from ui.widgets.clip_details import ClipDetailsWidget
+    from ui.viewmodels.clip_results import ClipResult
+
+    issue = LLMIssue("no_memory", "LLM не загружена: нужно ~14.4 ГиБ, свободно 13.3 ГиБ.", "Уменьшите запас в настройках.",
+                     need_gib=14.4, free_gib=13.3, reserve_gib=6.0)
+
+    class _WarnRunner(_FakeRunner):
+        def process_video(self, video_path, settings, progress=None):
+            progress("llm_warning", {"issue": issue.to_dict()})
+            return super().process_video(video_path, settings, progress)
+
+    monkeypatch.setattr(pipeline_worker, "PipelineRunner", _WarnRunner)
+    window.project_view.videos_added.emit([Path("/v/a.mp4")])
+    assert _pump(lambda: window.batch_view.warning_text("job_1") != "")
+    assert "без LLM" in window.batch_view.warning_text("job_1")
+    assert "14.4 ГиБ" in window.batch_view.banner_text() and "Что сделать: Уменьшите запас" in window.batch_view.banner_text()
+    assert _pump(lambda: window._scheduler.is_idle and not window._workers)
+
+    # из фонового потока подготовки модели тоже доходит (сигнал), а новая партия баннер сбрасывает
+    window._llm_issue_found.emit(None)
+    assert _pump(lambda: window.batch_view.banner_text() == "")
+
+    card = ClipDetailsWidget()
+    result = ClipResult(clip_path=Path("/v/x.mp4"), source_video="a.mp4", start_sec=0, end_sec=15, viral_score=70,
+                        title="Момент 0s (score 70)", llm_issue=issue)
+    card.set_clip(result)
+    assert not card._llm_note.isHidden() and "свободно 13.3 ГиБ" in card._llm_note.text() and "Что сделать" in card._llm_note.text()
+    card.set_clip(ClipResult(clip_path=Path("/v/y.mp4"), source_video="a.mp4", start_sec=0, end_sec=15, viral_score=70,
+                             title="Ок", titles=("Ок",)))
+    assert card._llm_note.isHidden()
+
+
+def test_old_clip_json_without_issue_still_explains_missing_titles(tmp_path):
+    import json
+    from ui.viewmodels.clip_results import ClipResult
+
+    (tmp_path / "old.mp4").write_bytes(b"x")
+    (tmp_path / "old.json").write_text(json.dumps({"clip_file": "old.mp4", "title": "Момент 5s (score 60)", "titles": [],
+                                                   "llm_errors": ["заголовки: Не удалось подготовить модель"]}), encoding="utf-8")
+    result = ClipResult.from_json(tmp_path / "old.json")
+    assert result.llm_issue is not None and "Не удалось подготовить модель" in result.llm_issue.message

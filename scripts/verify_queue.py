@@ -57,7 +57,7 @@ def main() -> None:
         from llm.managed_provider import ManagedLMStudio
 
         reserve = options["--reserve-mib"]
-        mw.ManagedLMStudio = lambda config: ManagedLMStudio(config, reserve_mib=reserve)
+        mw.ManagedLMStudio = lambda config, reserve_mib=None, on_issue=None: ManagedLMStudio(config, reserve_mib=reserve, on_issue=on_issue)
 
     app = QApplication([])
     window = mw.MainWindow()
@@ -99,6 +99,9 @@ def main() -> None:
     print(f"MemAvailable: старт {mem_start} МиБ, минимум {min_mem} МиБ (пик падения {mem_start - min_mem} МиБ)")
     sm = window._shared_models
     print(f"загрузок YOLO: {sm.detector_loads}, Whisper: {sm.transcriber_loads}, LLM load: {calls['llm_load']}, LLM unload: {calls['llm_unload']}")
+    print("баннер очереди:", window.batch_view.banner_text() or "—")
+    for j in ids:
+        print(f"заметка {j}:", window.batch_view.warning_text(j) or "—")
     order = []
     for _, job, stage in timeline:
         if stage == "analyzing":
@@ -107,7 +110,7 @@ def main() -> None:
     for path in sorted(out_dir.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         print(f"{path.name}: title={data['title']!r} llm_model={data.get('llm_model')} titles={len(data.get('titles', []))} "
-              f"music={data.get('music_file')} subs={list(data.get('subtitle_files', {}))} errors={data.get('llm_errors')}")
+              f"music={data.get('music_file')} subs={list(data.get('subtitle_files', {}))} llm_issue={(data.get('llm_issue') or {}).get('kind')} errors={data.get('llm_errors')}")
     app.quit()
 
 

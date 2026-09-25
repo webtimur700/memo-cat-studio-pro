@@ -125,3 +125,29 @@ def test_real_profiles_pick_gemma_on_the_users_machine_state():
     assert tight.model_key == "google/gemma-4-26b-a4b"
     with pytest.raises(NoSuitableModelError):
         select_model(models, available_mib=12 * 1024, profiles=DEFAULT_PROFILES)
+
+
+def test_small_unranked_backup_model_is_used_when_the_ranked_ones_do_not_fit():
+    from llm.model_selector import DEFAULT_PROFILES
+
+    backup = _model("someone/tiny-instruct-3b", 2.0, vision=False, reasoning=())
+    selection = select_model(MODELS + [backup], available_mib=9 * 1024, profiles=DEFAULT_PROFILES)   # резерв 6 -> бюджет 3 ГиБ
+    assert selection.model_key == "someone/tiny-instruct-3b"
+    assert "запасная вне рейтинга" in selection.reason and "не поместились" in selection.reason
+    # а когда лучшая помещается, запасная не трогается
+    assert select_model(MODELS + [backup], available_mib=24 * 1024, profiles=DEFAULT_PROFILES).model_key == "google/gemma-4-26b-a4b"
+
+
+def test_no_memory_error_carries_the_numbers_of_the_lightest_model():
+    with pytest.raises(NoSuitableModelError) as info:
+        select_model(MODELS, available_mib=10 * 1024, reserve_mib=6 * 1024, profiles=())
+    err = info.value
+    assert err.lightest_key == "qwen/qwen3.8-27b"
+    assert err.need_mib == pytest.approx(estimate_footprint_mib(MODELS[1]))
+    assert err.available_mib == 10 * 1024 and err.reserve_mib == 6 * 1024
+
+
+def test_smaller_reserve_lets_a_model_fit():
+    with pytest.raises(NoSuitableModelError):
+        select_model(MODELS, available_mib=20 * 1024, reserve_mib=6 * 1024, profiles=PROFILES)
+    assert select_model(MODELS, available_mib=20 * 1024, reserve_mib=2 * 1024, profiles=PROFILES).model_key == "google/gemma-4-26b-a4b"

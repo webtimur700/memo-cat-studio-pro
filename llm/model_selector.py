@@ -75,7 +75,18 @@ class Selection:
 
 
 class NoSuitableModelError(RuntimeError):
-    pass
+    """Подходящей модели нет. Для «не хватает памяти» заполнены цифры самой лёгкой модели — по ним
+    интерфейс показывает, сколько нужно и сколько свободно; для «нет чат-моделей» цифр нет."""
+
+    def __init__(
+        self, message: str, need_mib: float | None = None, available_mib: float | None = None,
+        reserve_mib: float | None = None, lightest_key: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.need_mib = need_mib
+        self.available_mib = available_mib
+        self.reserve_mib = reserve_mib
+        self.lightest_key = lightest_key
 
 
 def read_mem_available_mib(meminfo_path: Path = Path("/proc/meminfo")) -> float:
@@ -158,9 +169,14 @@ def select_model(
             profile = _profile_for(model.key, profiles)
             effort = profile.reasoning_effort if profile else default_reasoning_effort(model)
             place = f"место {ranked.index(model) + 1} из {len(ranked)}"
+            rating = (
+                ("запасная вне рейтинга (не измерена), лучшая из помещающихся" if skipped else "вне рейтинга (не измерена)")
+                if profile is None
+                else "лучшая в рейтинге" if not skipped else "лучшая из помещающихся"
+            )
             reason = (
                 f"{'уже загружена; ' if model.loaded_instances else ''}"
-                f"{'лучшая в рейтинге' if not skipped else 'лучшая из помещающихся'} ({place}), "
+                f"{rating} ({place}), "
                 f"нужно ~{need_mib / 1024:.1f} ГиБ, доступно {available_mib / 1024:.1f} ГиБ "
                 f"при резерве {reserve_mib / 1024:.1f} ГиБ под пайплайн"
             )
@@ -177,7 +193,10 @@ def select_model(
             )
         skipped.append(f"{model.key} (нужно ~{need_mib / 1024:.1f} ГиБ > {budget_mib / 1024:.1f})")
 
+    lightest = min(chat_models, key=estimate_footprint_mib)
     raise NoSuitableModelError(
         f"Ни одна LLM не помещается в память: доступно {available_mib / 1024:.1f} ГиБ, "
-        f"резерв под пайплайн {reserve_mib / 1024:.1f} ГиБ. " + "; ".join(skipped)
+        f"резерв под пайплайн {reserve_mib / 1024:.1f} ГиБ. " + "; ".join(skipped),
+        need_mib=estimate_footprint_mib(lightest), available_mib=available_mib, reserve_mib=reserve_mib,
+        lightest_key=lightest.key,
     )

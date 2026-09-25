@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.entities.llm_issue import LLMIssue
 from ui.viewmodels.clip_results import ClipResult
 
 COPIED_FEEDBACK_MS = 1200
@@ -73,7 +74,9 @@ class ClipDetailsWidget(QWidget):
 
         self._llm_note = QLabel()
         self._llm_note.setWordWrap(True)
-        self._llm_note.setObjectName("clipMeta")
+        self._llm_note.setObjectName("llmWarning")
+        self._llm_note.setStyleSheet("color: #f0b429; background: rgba(240,180,41,0.10); border-radius: 8px; padding: 8px;")
+        self._llm_note.hide()
 
         content = QWidget()
         content.setObjectName("detailsContent")
@@ -146,6 +149,7 @@ class ClipDetailsWidget(QWidget):
             self._hashtags.clear()
             self._transcript.clear()
             self._llm_note.clear()
+            self._llm_note.hide()
             self._set_enabled(False)
             return
 
@@ -161,10 +165,12 @@ class ClipDetailsWidget(QWidget):
             row.addWidget(_copy_button(lambda t=title: t, "Копировать"))
             self._titles_box.addLayout(row)
 
-        self._llm_note.setText(
-            "" if result.titles else
-            "Заголовки от LLM не получены (LM Studio была недоступна). Запустите LM Studio и обработайте видео снова."
-        )
+        issue = result.llm_issue or (None if result.titles else LLMIssue(
+            "unavailable", "Заголовки от LLM не получены.",
+            "Запустите LM Studio (и проверьте, что модель помещается в память), затем обработайте видео снова.",
+        ))
+        self._llm_note.setText(f"⚠ {issue.message}\nЧто сделать: {issue.hint}" if issue else "")
+        self._llm_note.setVisible(issue is not None)
         self._description.setPlainText(result.description)
         self._hashtags.setPlainText(result.hashtags_text)
         self._transcript.setText(result.transcript or "— речи в клипе нет —")

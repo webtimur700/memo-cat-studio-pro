@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QHeaderView,
+    QLabel,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionProgressBar,
@@ -70,13 +71,13 @@ class ProgressDelegate(QStyledItemDelegate):
 
 
 class BatchQueueView(QWidget):
-    COL_NAME, COL_STAGE, COL_PROGRESS, COL_SCORE = range(4)
+    COL_NAME, COL_STAGE, COL_PROGRESS, COL_SCORE, COL_NOTE = range(5)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        self._table = QTableWidget(0, 4, self)
-        self._table.setHorizontalHeaderLabels(["Видео", "Стадия", "Прогресс", "Найдено моментов"])
+        self._table = QTableWidget(0, 5, self)
+        self._table.setHorizontalHeaderLabels(["Видео", "Стадия", "Прогресс", "Найдено моментов", "Заметка"])
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -86,6 +87,8 @@ class BatchQueueView(QWidget):
         header.setSectionResizeMode(self.COL_STAGE, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(self.COL_PROGRESS, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(self.COL_SCORE, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(self.COL_NOTE, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(self.COL_NOTE, 260)
         self._table.setColumnWidth(self.COL_STAGE, 200)
         self._table.setColumnWidth(self.COL_SCORE, 150)
         self._table.setTextElideMode(Qt.TextElideMode.ElideRight)
@@ -95,8 +98,16 @@ class BatchQueueView(QWidget):
 
         self._row_by_job_id: dict[str, int] = {}
 
+        # предупреждение про LLM над таблицей: видно сразу, как только выяснилось, что модель не загрузится
+        self._banner = QLabel()
+        self._banner.setObjectName("llmBanner")
+        self._banner.setWordWrap(True)
+        self._banner.setStyleSheet("color: #f0b429; background: rgba(240,180,41,0.12); border-radius: 10px; padding: 10px;")
+        self._banner.hide()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
+        layout.addWidget(self._banner)
         layout.addWidget(self._table)
 
     def add_job(self, job_id: str, video_name: str) -> None:
@@ -117,8 +128,33 @@ class BatchQueueView(QWidget):
                 progress_item.setData(Qt.ItemDataRole.UserRole, 0)
                 self._table.setItem(row, self.COL_PROGRESS, progress_item)
                 self._table.setItem(row, self.COL_SCORE, QTableWidgetItem("—"))
+                self._table.setItem(row, self.COL_NOTE, QTableWidgetItem(""))
         finally:
             self._table.setUpdatesEnabled(True)
+
+    def set_llm_banner(self, issue) -> None:
+        """Общее предупреждение про LLM (None — убрать): причина с цифрами и что можно сделать."""
+        if issue is None:
+            self._banner.clear()
+            self._banner.hide()
+            return
+        self._banner.setText(f"⚠ {issue.message}\nЧто сделать: {issue.hint}")
+        self._banner.show()
+
+    def banner_text(self) -> str:
+        return self._banner.text() if not self._banner.isHidden() else ""
+
+    def set_job_warning(self, job_id: str, issue) -> None:
+        row = self._row_by_job_id.get(job_id)
+        item = self._table.item(row, self.COL_NOTE) if row is not None else None
+        if item is not None:
+            item.setText("⚠ без LLM: заголовки по умолчанию" if issue.kind != "partial" else "⚠ часть данных от LLM не получена")
+            item.setToolTip(f"{issue.message}\nЧто сделать: {issue.hint}")
+
+    def warning_text(self, job_id: str) -> str:
+        row = self._row_by_job_id.get(job_id)
+        item = self._table.item(row, self.COL_NOTE) if row is not None else None
+        return item.text() if item is not None else ""
 
     def stage_text(self, job_id: str) -> str:
         row = self._row_by_job_id.get(job_id)

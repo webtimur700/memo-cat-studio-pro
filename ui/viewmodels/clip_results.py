@@ -11,6 +11,7 @@ from pathlib import Path
 from loguru import logger
 
 from core.entities.clip import Clip
+from core.entities.llm_issue import LLMIssue
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,7 @@ class ClipResult:
     description: str = ""
     hashtags: tuple[str, ...] = field(default_factory=tuple)
     transcript: str = ""
+    llm_issue: LLMIssue | None = None   # почему нет заголовков/части данных от LLM
 
     @property
     def folder(self) -> Path:
@@ -70,6 +72,7 @@ class ClipResult:
             description=clip.description,
             hashtags=tuple(clip.hashtags),
             transcript=clip.transcript,
+            llm_issue=clip.llm_issue,
         )
 
     @classmethod
@@ -81,6 +84,14 @@ class ClipResult:
                 return None
             cover_name = data.get("cover_file")
             cover_path = json_path.with_name(cover_name) if cover_name else None
+            titles = tuple(data.get("titles", ()))
+            issue = LLMIssue.from_dict(data.get("llm_issue"))
+            if issue is None and not titles:   # JSON прошлых версий: причины нет, но и заголовков от LLM нет
+                errors = data.get("llm_errors") or []
+                issue = LLMIssue.from_errors(errors) if errors else LLMIssue(
+                    "unavailable", "Заголовки от LLM не получены.",
+                    "Запустите LM Studio (и проверьте, что модель помещается в память), затем обработайте видео снова.",
+                )
             return cls(
                 clip_path=clip_path,
                 source_video=data.get("source_video", ""),
@@ -89,10 +100,11 @@ class ClipResult:
                 viral_score=int(data.get("viral_score", 0)),
                 title=data.get("title", ""),
                 cover_path=cover_path if cover_path and cover_path.is_file() else None,
-                titles=tuple(data.get("titles", ())),
+                titles=titles,
                 description=data.get("description", ""),
                 hashtags=tuple(data.get("hashtags", ())),
                 transcript=data.get("transcript", ""),
+                llm_issue=issue,
             )
         except (OSError, ValueError, KeyError) as exc:
             logger.warning("Не удалось прочитать результат {}: {}", json_path.name, exc)

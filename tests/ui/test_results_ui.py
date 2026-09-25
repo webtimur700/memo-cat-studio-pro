@@ -94,7 +94,7 @@ def test_clip_without_llm_shows_note_and_default_title(qapp, tmp_path):
     result = ClipResult(tmp_path / "c.mp4", "v.mp4", 0.0, 15.0, 50, "Момент 0s (score 50)")
     view = EditorView()
     view.details.set_clip(result)
-    assert "LM Studio была недоступна" in view.details._llm_note.text()
+    assert "Заголовки от LLM не получены" in view.details._llm_note.text()
     assert len(_buttons(view.details, "Копировать")) >= 1
 
 
@@ -227,3 +227,16 @@ def test_settings_view_saves_music_and_queue_options(qapp):
     saved = received[0]
     assert (saved.audio.music_enabled, saved.audio.music_volume, saved.audio.duck_on_speech) == (False, 0.35, False)
     assert saved.batch.max_concurrent_videos == 3
+
+
+def test_settings_view_saves_llm_reserve(qapp):
+    from core.entities.settings import UserSettings
+    from ui.views.settings_view import SettingsView
+
+    view = SettingsView(UserSettings())
+    assert view._reserve_spin.value() == 6.0
+    got = []
+    view.settings_saved.connect(got.append)
+    view._reserve_spin.setValue(4.5)
+    view._save_button.click()
+    assert got[0].llm.pipeline_reserve_gb == 4.5

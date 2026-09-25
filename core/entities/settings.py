@@ -128,6 +128,17 @@ class CacheSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class LLMSettings:
+    """Память, которую LLM обязана оставить остальному пайплайну (Whisper, YOLO, ffmpeg, интерфейс)."""
+
+    pipeline_reserve_gb: float = 6.0
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any]) -> "LLMSettings":
+        return cls(pipeline_reserve_gb=max(0.5, float(raw.get("pipeline_reserve_gb", 6.0))))
+
+
+@dataclass(frozen=True, slots=True)
 class BatchSettings:
     """Очередь пакетной обработки: сколько видео обрабатывается одновременно (остальные ждут)."""
 
@@ -155,6 +166,7 @@ class UserSettings:
     batch: BatchSettings = field(default_factory=BatchSettings)
     audio: AudioSettings = field(default_factory=AudioSettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
+    llm: LLMSettings = field(default_factory=LLMSettings)
 
     @classmethod
     def load_from_yaml(cls, path: Path) -> "UserSettings":
@@ -248,6 +260,7 @@ class UserSettings:
             batch=BatchSettings.from_raw(raw.get("batch", {})),
             audio=AudioSettings.from_raw(raw.get("audio", {})),
             cache=CacheSettings.from_raw(raw.get("cache", {})),
+            llm=LLMSettings.from_raw(raw.get("llm", {})),
         )
 
     def with_field(self, section: str, **changes: Any) -> "UserSettings":

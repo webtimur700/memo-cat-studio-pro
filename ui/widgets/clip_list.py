@@ -36,7 +36,10 @@ class _ClipRow(QWidget):
         meta.setObjectName("clipMeta")
 
         color: QColor = score_color(result.viral_score)
-        score = QLabel(f"Viral Score {result.viral_score}")
+        warn = " ⚠ без LLM" if result.llm_issue else ""
+        score = QLabel(f"Viral Score {result.viral_score}{warn}")
+        if result.llm_issue:
+            score.setToolTip(result.llm_issue.text)
         score.setObjectName("clipScore")
         score.setStyleSheet(f"color: {color.name()}; font-weight: 700;")
 

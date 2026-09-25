@@ -209,3 +209,40 @@ def test_new_batch_after_release_loads_again(lm_server):
     managed.begin_use()
     managed.complete("s", "u")
     assert len(state.load_calls) == 2
+
+
+def test_not_enough_memory_gives_a_structured_issue_with_numbers_and_notifies_listener(lm_server):
+    state, url = lm_server
+    seen = []
+    managed = ManagedLMStudio(LMStudioConfig(base_url=url), reserve_mib=6 * 1024, mem_reader=lambda: 6 * 1024, on_issue=seen.append)
+    with pytest.raises(LLMUnavailableError):
+        managed.complete("s", "u")
+    issue = managed.issue
+    assert issue.kind == "no_memory" and issue.free_gib == pytest.approx(6.0) and issue.reserve_gib == pytest.approx(6.0)
+    assert issue.need_gib == pytest.approx(4_000_000_000 / 2**30 * 0.8 + 1, abs=0.1)    # самая лёгкая модель
+    assert "vendor/small-chat" in issue.message and "ГиБ" in issue.message and "запас" in issue.hint.lower()
+    assert seen == [issue] and state.load_calls == []
+
+
+def test_lm_studio_not_running_is_reported_as_unavailable_with_a_hint():
+    seen = []
+    managed = ManagedLMStudio(LMStudioConfig(base_url="http://127.0.0.1:9/v1"), on_issue=seen.append)   # порт 9 никто не слушает
+    with pytest.raises(LLMUnavailableError):
+        managed.complete("s", "u")
+    assert managed.issue.kind == "unavailable" and "127.0.0.1:9" in managed.issue.message
+    assert "Start Server" in managed.issue.hint and seen == [managed.issue]
+
+
+def test_success_clears_the_issue_and_reserve_can_be_lowered_from_settings(lm_server):
+    state, url = lm_server
+    seen = []
+    managed = ManagedLMStudio(LMStudioConfig(base_url=url), reserve_mib=6 * 1024, mem_reader=lambda: 8 * 1024, on_issue=seen.append)
+    with pytest.raises(LLMUnavailableError):
+        managed.complete("s", "u")                   # бюджет 8 - 6 = 2 ГиБ: даже small-chat (~4.2 ГиБ) не влезает
+    assert managed.issue.kind == "no_memory"
+
+    managed.set_reserve_mib(2 * 1024)                # пользователь уменьшил запас в настройках
+    managed.release()
+    assert managed.complete("s", "u") == "1. Заголовок"
+    assert managed.issue is None and seen[-1] is None
+    assert managed.selection.model_key == "vendor/small-chat"

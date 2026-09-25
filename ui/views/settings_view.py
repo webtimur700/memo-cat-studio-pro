@@ -13,6 +13,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFormLayout,
     QLabel,
     QPushButton,
@@ -172,6 +173,19 @@ class SettingsView(QWidget):
         music_layout.addWidget(self._duck_checkbox)
         form.addRow(QLabel("Музыка"), music_container)
 
+        # --- Запас памяти под пайплайн (LLM берёт только то, что останется сверх него) ---
+        self._reserve_spin = QDoubleSpinBox()
+        self._reserve_spin.setRange(0.5, 24.0)
+        self._reserve_spin.setSingleStep(0.5)
+        self._reserve_spin.setSuffix(" ГиБ")
+        self._reserve_spin.setValue(initial_settings.llm.pipeline_reserve_gb)
+        self._reserve_spin.setToolTip(
+            "Сколько памяти оставить Whisper, YOLO, ffmpeg и интерфейсу. Модель, которой не хватает места, не загружается: "
+            "берётся меньшая или клипы получают заголовки по умолчанию (причина видна в очереди и в карточке клипа)."
+        )
+        self._reserve_spin.valueChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Запас памяти под пайплайн"), self._reserve_spin)
+
         # --- Очередь: сколько видео одновременно ---
         self._concurrent_spin = QSpinBox()
         self._concurrent_spin.setRange(1, 16)
@@ -227,6 +241,7 @@ class SettingsView(QWidget):
             "safe_zone", **{name: spin.value() for name, spin in self._safe_zone_spins.items()}
         )
 
+        updated = updated.with_field("llm", pipeline_reserve_gb=self._reserve_spin.value())
         updated = updated.with_field("batch", max_concurrent_videos=self._concurrent_spin.value())
         updated = updated.with_field("audio", music_enabled=self._music_checkbox.isChecked(), music_volume=self._music_volume_slider.value() / 100, duck_on_speech=self._duck_checkbox.isChecked())
 

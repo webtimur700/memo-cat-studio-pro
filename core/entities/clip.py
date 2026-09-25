@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.entities.llm_issue import LLMIssue
 from core.entities.moment import Moment
 
 
@@ -20,3 +21,4 @@ class Clip:
     metadata_path: Path | None = None
     cover_path: Path | None = None
     subtitle_paths: tuple[Path, ...] = field(default_factory=tuple)   # SRT/ASS рядом с клипом, тайминг от начала клипа
+    llm_issue: LLMIssue | None = None   # почему нет заголовков от LLM (None — всё получено)
