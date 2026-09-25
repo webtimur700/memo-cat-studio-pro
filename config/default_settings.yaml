@@ -112,8 +112,11 @@ llm:
   pipeline_reserve_gb: 6
 
 plugins:
-  enabled_dirs: ["plugins/"]
+  # Папки с плагинами (в каждой — подпапки с plugin.py); загружаются при запуске приложения.
+  enabled_dirs: ["plugins/", "plugins/examples/"]
   autoload: true
+  # Эффекты, применяемые к каждому клипу по порядку (выбираются в настройках). Пусто — экспорт без дополнительного прохода.
+  enabled_effects: []
 
 safe_zone:
   # Интерфейс YouTube Shorts закрывает часть кадра (размеры в px при 1080x1920).

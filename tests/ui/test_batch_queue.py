@@ -304,3 +304,38 @@ def test_run_interrupted_by_closing_is_marked_on_next_start(window, monkeypatch)
         assert any("⚠️" in t and "long.mp4" in t and "прервано" in t for t in reopened.project_view.project_texts())
     finally:
         reopened._db.close()
+
+
+def test_example_plugin_is_loaded_at_startup_listed_in_settings_and_selection_survives_restart(window, tmp_path):
+    assert "vintage_sepia" in window._plugins.list_effects()
+    box = window.settings_view._effect_checkboxes["vintage_sepia"]
+    assert box.isEnabled() and not box.isChecked()
+    box.setChecked(True)
+    window.settings_view._save_button.click()
+    assert window._settings.plugins.enabled_effects == ("vintage_sepia",)
+
+    window._db.close()
+    reopened = main_window.MainWindow()
+    try:
+        assert reopened._settings.plugins.enabled_effects == ("vintage_sepia",)
+        assert reopened.settings_view._effect_checkboxes["vintage_sepia"].isChecked()
+    finally:
+        reopened._db.close()
+
+
+def test_selected_effect_of_a_missing_plugin_is_shown_not_dropped(qapp):
+    from core.entities.settings import UserSettings
+    from ui.views.settings_view import SettingsView
+
+    settings = UserSettings().with_field("plugins", enabled_effects=("gone_effect",))
+    view = SettingsView(settings, available_effects=["vintage_sepia"])
+    assert "плагин не найден" in view._effect_checkboxes["gone_effect"].text() and view._effect_checkboxes["gone_effect"].isChecked()
+    assert not view._effect_checkboxes["vintage_sepia"].isChecked()
+    got = []
+    view.settings_saved.connect(got.append)
+    view._effect_checkboxes["vintage_sepia"].setChecked(True)
+    view._save_button.click()
+    assert got[0].plugins.enabled_effects == ("vintage_sepia", "gone_effect") or set(got[0].plugins.enabled_effects) == {"vintage_sepia", "gone_effect"}
+
+    empty = SettingsView(UserSettings())
+    assert empty._effect_checkboxes == {}

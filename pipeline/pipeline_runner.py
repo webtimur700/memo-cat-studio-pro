@@ -133,12 +133,14 @@ class PipelineRunner:
         llm_provider: object | None = None,
         assets_dir: Path | None = None,
         shared_models: SharedModels | None = None,
+        plugin_registry=None,
     ) -> None:
         # assets/logo/logo.png (если положили) подхватывается вместо логотипа по умолчанию
         self._assets_dir = assets_dir or PROJECT_ROOT / "assets"
         self._models_dir = models_dir or Path("models")
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
+        self._plugins = plugin_registry   # PluginRegistry с эффектами (None — плагинов нет)
         # YOLO и Whisper: если раннер создан очередью — модели общие на все видео, иначе свои на этот раннер
         self._shared = shared_models or SharedModels(self._models_dir)
         self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
@@ -362,6 +364,7 @@ class PipelineRunner:
             zone=zone, subtitles_during_banner=subtitles_during_banner,
         )
 
+        effects = self._resolve_effects(settings)
         plan = ExportPlan(
             source_path=video_path,
             output_path=output_path,
@@ -373,6 +376,7 @@ class PipelineRunner:
             banner_duration_sec=banner_duration_sec,
             branding=branding,
             settings=settings.export,
+            effects=effects,
             source_start_sec=moment.start_sec,
         )
 
@@ -401,6 +405,7 @@ class PipelineRunner:
             music_file=music_file,
             music_mix=music_mix,
             llm_issue=llm_issue,
+            effects=effects,
         )
 
         return Clip(
@@ -442,6 +447,20 @@ class PipelineRunner:
         except Exception as exc:
             logger.warning("Не удалось добавить музыку к {}: {} — клип остаётся с оригинальным звуком", output_path.name, exc)
             return None, None
+
+    def _resolve_effects(self, settings: UserSettings) -> tuple:
+        """Выбранные пользователем эффекты плагинов как пары (имя, функция). Нет реестра/плагин пропал — предупреждение и пропуск."""
+        names = settings.plugins.enabled_effects
+        if not names:
+            return ()
+        resolved = []
+        for name in names:
+            effect = self._plugins.get_effect(name) if self._plugins is not None else None
+            if effect is None:
+                logger.warning("Эффект '{}' выбран в настройках, но плагин не загружен — пропущен", name)
+                continue
+            resolved.append((name, effect))
+        return tuple(resolved)
 
     def _build_branding(self, settings: UserSettings, zone: SafeZone | None = None) -> BrandingOverlay | None:
         """Логотип (assets/logo/logo.png или "Memo Cat" по умолчанию) + Subscribe."""
@@ -560,6 +579,7 @@ class PipelineRunner:
         music_file: str | None = None,
         music_mix: dict | None = None,
         llm_issue: LLMIssue | None = None,
+        effects: tuple = (),
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
         payload = {
@@ -577,6 +597,7 @@ class PipelineRunner:
             "transcript_original": transcript_original if transcript_original != transcript else "",
             "speech_language": language,
             "music_file": music_file,
+            "effects": [name for name, _ in effects],
             "score_breakdown": [p.to_dict() for p in moment.breakdown],
             "music_mix": music_mix,
             "llm_issue": llm_issue.to_dict() if llm_issue else None,

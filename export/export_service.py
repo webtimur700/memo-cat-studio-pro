@@ -38,6 +38,7 @@ from PIL import Image
 from animation.promo_banner_animator import compute_banner_animation_state, render_banner_on_frame
 from core.exceptions import FFmpegExecutionError
 from core.entities.settings import ExportSettings
+from export.frame_effects import apply_effects_to_video
 from effects.branding_overlay import BrandingOverlay
 from export.dynamic_crop import CropSample, build_dynamic_crop_filter
 from export.quality_presets import resolve_quality_preset
@@ -118,6 +119,9 @@ class ExportPlan:
     settings: ExportSettings
     branding: BrandingOverlay | None = None
     """Логотип + кнопка Subscribe для overlay-ролика (None — без них)."""
+    effects: tuple = ()
+    """Эффекты-плагины: пары (имя, функция кадр BGR -> кадр BGR), выбранные пользователем. Применяются к видеоряду до
+    субтитров и оверлеев (логотип и плашка не тонируются). Пусто — дополнительный проход не запускается."""
     source_start_sec: float = 0.0
     """Абсолютное время начала момента в ИСХОДНОМ видео (секунды).
 
@@ -158,9 +162,12 @@ class ExportService:
         # файла и передаём в фильтр только голое имя файла, без единого
         # спецсимвола пути.
         ass_cwd: Path | None = None
+        # с эффектами субтитры вжигаются позже (после эффекта, вместе с оверлеями), иначе эффект тонировал бы и текст
+        defer_subtitles = bool(plan.effects) and plan.subtitle_ass_path is not None
         if plan.subtitle_ass_path is not None:
             ass_cwd = plan.subtitle_ass_path.parent
-            video_filters.append(f"ass={plan.subtitle_ass_path.name}")
+            if not defer_subtitles:
+                video_filters.append(f"ass={plan.subtitle_ass_path.name}")
 
         filter_chain = ",".join(video_filters)
 
@@ -185,35 +192,49 @@ class ExportService:
             logger.debug("ffmpeg filter_chain: {}", filter_chain)
             _run(base_cmd, cwd=ass_cwd)
 
+            if plan.effects:
+                fx_output = Path(tmp_dir) / "fx.mp4"
+                logger.info("Эффекты плагинов ({}) для клипа {}", ", ".join(n for n, _ in plan.effects), plan.output_path.name)
+                apply_effects_to_video(base_output, fx_output, plan.effects, plan.settings.fps, _video_quality_args(plan.settings, quality))
+                base_output = fx_output
+
             has_branding = plan.branding is not None and not plan.branding.is_empty
-            if plan.banner_rect is None and not has_branding:
+            if plan.banner_rect is None and not has_branding and not defer_subtitles:
                 shutil.copy(base_output, plan.output_path)
                 return plan.output_path
 
-            banner_overlay_path = Path(tmp_dir) / "banner_overlay.mov"
-            render_banner_overlay_clip(
-                banner_overlay_path,
-                clip_duration_sec=clip_duration,
-                banner_rect=plan.banner_rect,
-                banner_text_lines=plan.banner_text_lines,
-                appear_at_sec=plan.banner_appear_at_sec,
-                banner_duration_sec=plan.banner_duration_sec,
-                frame_size=(plan.settings.width, plan.settings.height),
-                fps=plan.settings.fps,
-                branding=plan.branding,
-            )
+            overlay_inputs: list[str] = []
+            if plan.banner_rect is not None or has_branding:
+                banner_overlay_path = Path(tmp_dir) / "banner_overlay.mov"
+                render_banner_overlay_clip(
+                    banner_overlay_path,
+                    clip_duration_sec=clip_duration,
+                    banner_rect=plan.banner_rect,
+                    banner_text_lines=plan.banner_text_lines,
+                    appear_at_sec=plan.banner_appear_at_sec,
+                    banner_duration_sec=plan.banner_duration_sec,
+                    frame_size=(plan.settings.width, plan.settings.height),
+                    fps=plan.settings.fps,
+                    branding=plan.branding,
+                )
+                overlay_inputs = ["-i", str(banner_overlay_path)]
 
-            logger.info("Наложение анимированных оверлеев (плашка/логотип/Subscribe) на клип: {}", plan.output_path.name)
+            logger.info("Наложение субтитров/оверлеев (плашка/логотип/Subscribe) на клип: {}", plan.output_path.name)
+            if defer_subtitles and overlay_inputs:
+                graph = f"[0:v]ass={plan.subtitle_ass_path.name}[subbed];[subbed][1:v]overlay=0:0:format=auto"
+            elif defer_subtitles:
+                graph = f"[0:v]ass={plan.subtitle_ass_path.name}"
+            else:
+                graph = "[0:v][1:v]overlay=0:0:format=auto"
             overlay_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", str(base_output),
-                "-i", str(banner_overlay_path),
-                "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
+                "-i", str(base_output.resolve()), *overlay_inputs,
+                "-filter_complex", graph,
                 "-r", str(plan.settings.fps), "-pix_fmt", "yuv420p",
                 *_video_quality_args(plan.settings, quality),
                 "-c:a", "copy", "-movflags", "+faststart",
-                str(plan.output_path),
+                str(plan.output_path.resolve()),
             ]
-            _run(overlay_cmd)
+            _run(overlay_cmd, cwd=ass_cwd if defer_subtitles else None)
 
         return plan.output_path

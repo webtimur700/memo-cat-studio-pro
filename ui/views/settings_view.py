@@ -44,7 +44,9 @@ FPS_CHOICES = [24, 25, 30, 50, 60]
 class SettingsView(QWidget):
     settings_saved = Signal(object)  # UserSettings
 
-    def __init__(self, initial_settings: UserSettings, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, initial_settings: UserSettings, parent: QWidget | None = None, available_effects: list[str] | None = None
+    ) -> None:
         super().__init__(parent)
         self._settings = initial_settings
 
@@ -221,6 +223,33 @@ class SettingsView(QWidget):
         self._concurrent_spin.valueChanged.connect(self._on_field_changed)
         form.addRow(QLabel("Видео одновременно"), self._concurrent_spin)
 
+        # --- Эффекты плагинов: какие применять к клипам (по порядку списка) ---
+        self._effect_checkboxes: dict[str, QCheckBox] = {}
+        effects_container = QWidget()
+        effects_layout = QVBoxLayout(effects_container)
+        effects_layout.setContentsMargins(0, 0, 0, 0)
+        names = list(available_effects or [])
+        for missing in initial_settings.plugins.enabled_effects:   # выбран раньше, а плагина сейчас нет — показываем, а не теряем молча
+            if missing not in names:
+                names.append(missing)
+        for name in names:
+            available = name in (available_effects or [])
+            checkbox = QCheckBox(name if available else f"{name} (плагин не найден)")
+            checkbox.setChecked(name in initial_settings.plugins.enabled_effects)
+            checkbox.setEnabled(available or checkbox.isChecked())
+            checkbox.stateChanged.connect(self._on_field_changed)
+            self._effect_checkboxes[name] = checkbox
+            effects_layout.addWidget(checkbox)
+        if not names:
+            hint = QLabel("Плагинов с эффектами нет: положите их в plugins/<имя>/plugin.py и перезапустите приложение")
+            hint.setWordWrap(True)
+            effects_layout.addWidget(hint)
+        else:
+            note = QLabel("Эффекты применяются к видеоряду клипа до субтитров и плашки; без выбранных эффектов экспорт не замедляется.")
+            note.setWordWrap(True)
+            effects_layout.addWidget(note)
+        form.addRow(QLabel("Эффекты (плагины)"), effects_container)
+
         # --- FPS и битрейт клипа ---
         self._fps_combo = QComboBox()
         self._fps_combo.addItems([str(f) for f in FPS_CHOICES])
@@ -292,6 +321,7 @@ class SettingsView(QWidget):
             "safe_zone", **{name: spin.value() for name, spin in self._safe_zone_spins.items()}
         )
 
+        updated = updated.with_field("plugins", enabled_effects=tuple(n for n, cb in self._effect_checkboxes.items() if cb.isChecked()))
         updated = updated.with_field("llm", pipeline_reserve_gb=self._reserve_spin.value())
         updated = updated.with_field("batch", max_concurrent_videos=self._concurrent_spin.value())
         updated = updated.with_field("audio", music_enabled=self._music_checkbox.isChecked(), music_offset_db=float(self._music_offset_slider.value()), duck_on_speech=self._duck_checkbox.isChecked())

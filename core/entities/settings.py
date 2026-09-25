@@ -140,6 +140,23 @@ class LLMSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class PluginSettings:
+    """Плагины (plugins/loader.py): где искать и какие эффекты применять к клипам (по порядку)."""
+
+    enabled_dirs: tuple[str, ...] = ("plugins/", "plugins/examples/")
+    autoload: bool = True
+    enabled_effects: tuple[str, ...] = ()   # имена эффектов из PluginRegistry; пусто — эффекты не применяются
+
+    @classmethod
+    def from_raw(cls, raw: dict[str, Any]) -> "PluginSettings":
+        return cls(
+            enabled_dirs=tuple(raw.get("enabled_dirs", ("plugins/", "plugins/examples/"))),
+            autoload=bool(raw.get("autoload", True)),
+            enabled_effects=tuple(raw.get("enabled_effects", ())),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class BatchSettings:
     """Очередь пакетной обработки: сколько видео обрабатывается одновременно (остальные ждут)."""
 
@@ -168,6 +185,7 @@ class UserSettings:
     audio: AudioSettings = field(default_factory=AudioSettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
     llm: LLMSettings = field(default_factory=LLMSettings)
+    plugins: PluginSettings = field(default_factory=PluginSettings)
 
     @classmethod
     def load_from_yaml(cls, path: Path) -> "UserSettings":
@@ -263,6 +281,7 @@ class UserSettings:
             audio=AudioSettings.from_raw(raw.get("audio", {})),
             cache=CacheSettings.from_raw(raw.get("cache", {})),
             llm=LLMSettings.from_raw(raw.get("llm", {})),
+            plugins=PluginSettings.from_raw(raw.get("plugins", {})),
         )
 
     def with_field(self, section: str, **changes: Any) -> "UserSettings":

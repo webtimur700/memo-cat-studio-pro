@@ -36,6 +36,7 @@ class PipelineWorker(QThread):
         output_dir: Path,
         llm_provider: object | None = None,
         shared_models: SharedModels | None = None,
+        plugin_registry=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -46,6 +47,7 @@ class PipelineWorker(QThread):
         self._output_dir = output_dir
         self._llm_provider = llm_provider
         self._shared_models = shared_models
+        self._plugin_registry = plugin_registry
 
     def run(self) -> None:  # выполняется в отдельном потоке — тяжёлая работа здесь безопасна
         def on_progress(stage: str, data: dict) -> None:
@@ -59,6 +61,7 @@ class PipelineWorker(QThread):
                 output_dir=self._output_dir,
                 llm_provider=self._llm_provider,
                 shared_models=self._shared_models,
+                plugin_registry=self._plugin_registry,
             )
             clips: list[Clip] = runner.process_video(self._video_path, self._settings, progress=on_progress)
             self.job_finished.emit(self._job_id, clips)

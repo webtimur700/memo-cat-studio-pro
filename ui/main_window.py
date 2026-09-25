@@ -33,6 +33,8 @@ from llm.managed_provider import ManagedLMStudio
 from database.db import Database
 from database.repositories.history_repository import STATUS_LABELS, HistoryRepository
 from database.repositories.settings_repository import SettingsRepository
+from plugins.loader import load_plugins
+from plugins.sdk.registry import PluginRegistry
 from pipeline.cache_cleaner import CacheCleaner, ResultGroup
 from pipeline.job_scheduler import JobScheduler
 from pipeline.shared_models import SharedModels
@@ -66,6 +68,12 @@ class MainWindow(QMainWindow):
         self._history = HistoryRepository(self._db)
         self._settings = self._settings_repo.load(self._defaults)
         self._history.mark_interrupted()
+        # плагины (эффекты) загружаются при запуске; какие из них применять — выбирается в настройках
+        self._plugins = PluginRegistry()
+        if self._settings.plugins.autoload:
+            for directory in self._settings.plugins.enabled_dirs:
+                path = Path(directory)
+                load_plugins(path if path.is_absolute() else PROJECT_ROOT / path, self._plugins)
         self._job_history: dict[str, dict] = {}   # job_id -> {"project_id", "run_id", "path"}
         self._workers: dict[str, PipelineWorker] = {}
         self._job_videos: dict[str, str] = {}   # job_id -> имя исходного видео
@@ -99,7 +107,7 @@ class MainWindow(QMainWindow):
         self.project_view = ProjectView()
         self.editor_view = EditorView()
         self.batch_view = BatchQueueView()
-        self.settings_view = SettingsView(self._settings)
+        self.settings_view = SettingsView(self._settings, available_effects=self._plugins.list_effects())
 
         for view in (self.project_view, self.editor_view, self.batch_view, self.settings_view):
             self._stack.addWidget(view)
@@ -243,6 +251,7 @@ class MainWindow(QMainWindow):
             output_dir=EXPORT_OUTPUT_DIR,
             llm_provider=self._llm,
             shared_models=self._shared_models,
+            plugin_registry=self._plugins,
             parent=self,
         )
         worker.stage_changed.connect(self._on_pipeline_stage_changed)
