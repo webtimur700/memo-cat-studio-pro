@@ -30,7 +30,7 @@ VAAPI_DEVICE = os.environ.get("MEMO_CAT_VAAPI_DEVICE", "/dev/dri/renderD128")
 # при декодировании пишет «error while decoding MB .. 119, bytestream -N» почти на каждом кадре (замерено на 24 клипах,
 # `ffmpeg -v error -i clip.mp4 -f null -`). Любое число слайсов >= 2 убирает ошибки без потери скорости и качества.
 VAAPI_SLICES = 4
-VAAPI_BITRATE_SHARE = {"high": 0.67, "medium": 0.42, "low": 0.2}
+VAAPI_BITRATE_SHARE = {"high": 0.5, "medium": 0.3, "low": 0.15}
 
 
 @lru_cache(maxsize=1)

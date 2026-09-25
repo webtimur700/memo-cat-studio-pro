@@ -161,6 +161,10 @@ class ComputeBackend:
         session_options = ort.SessionOptions()
         session_options.intra_op_num_threads = resolved.cpu_threads
         session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        # Без активного ожидания: потоки onnxruntime не крутятся вхолостую и не отнимают ядра у декодера видео и соседних
+        # запусков модели (YOLO в нескольких потоках + декодирование: 79 -> 48 мс на кадр, замер в docs/performance.md).
+        # Одиночный вызов при этом медленнее на ~10%, поэтому параллельные вызовы (vision/parallel_detect.py) обязательны.
+        session_options.add_session_config_entry("session.intra_op.allow_spinning", "0")
 
         return ort.InferenceSession(
             model_path,
