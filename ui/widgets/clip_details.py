@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from core.entities.llm_issue import LLMIssue
 from ui.viewmodels.clip_results import ClipResult
+from ui.widgets.score_breakdown import ScoreBreakdownWidget
 
 COPIED_FEEDBACK_MS = 1200
 
@@ -78,6 +79,8 @@ class ClipDetailsWidget(QWidget):
         self._llm_note.setStyleSheet("color: #f0b429; background: rgba(240,180,41,0.10); border-radius: 8px; padding: 8px;")
         self._llm_note.hide()
 
+        self._breakdown = ScoreBreakdownWidget()
+
         content = QWidget()
         content.setObjectName("detailsContent")
         layout = QVBoxLayout(content)
@@ -85,6 +88,8 @@ class ClipDetailsWidget(QWidget):
         layout.setSpacing(8)
         layout.addWidget(self._header)
         layout.addLayout(top)
+        layout.addWidget(self._section_label("Из чего сложился Viral Score"))
+        layout.addWidget(self._breakdown)
         layout.addWidget(self._section_label("Заголовки"))
         layout.addWidget(self._titles_container)
         layout.addWidget(self._llm_note)
@@ -150,10 +155,12 @@ class ClipDetailsWidget(QWidget):
             self._transcript.clear()
             self._llm_note.clear()
             self._llm_note.hide()
+            self._breakdown.set_breakdown(0, ())
             self._set_enabled(False)
             return
 
         self._set_enabled(True)
+        self._breakdown.set_breakdown(result.viral_score, result.score_breakdown)
         self._header.setText(f"{result.title}\nViral Score {result.viral_score} · {result.source_video} · {result.time_range_text}")
         titles = result.titles or ((result.title,) if result.title else ())
         for index, title in enumerate(titles, start=1):

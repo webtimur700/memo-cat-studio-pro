@@ -240,3 +240,65 @@ def test_settings_view_saves_llm_reserve(qapp):
     view._reserve_spin.setValue(4.5)
     view._save_button.click()
     assert got[0].llm.pipeline_reserve_gb == 4.5
+
+
+def _parts():
+    from core.entities.score import SignalPart
+
+    return (
+        SignalPart("motion", "Движение", 0.5, 0.30, 17.6),
+        SignalPart("presence", "Животное в кадре", 1.0, 0.15, 17.6),
+        SignalPart("scene", "Смены сцен", 0.5, 0.15, 8.8, "1 смен(ы)"),
+        SignalPart("audio", "Звуковые события", 0.9, 0.25, 26.5, "лай, смех"),
+        SignalPart("motion_events", "Прыжки и падения", 1.0, 0.20, 23.5, "1 прыжок, 1 падение", bonus=True),
+    )
+
+
+def test_clip_card_explains_the_score_signal_by_signal(qapp, tmp_path):
+    from ui.viewmodels.clip_results import ClipResult
+
+    view = EditorView()
+    result = ClipResult(tmp_path / "c.mp4", "v.mp4", 0.0, 15.0, 94, "Кот", titles=("Кот",), score_breakdown=_parts())
+    view.details.set_clip(result)
+    rows = view.details._breakdown.row_texts()
+    assert len(rows) == 5
+    assert rows[3].startswith("Звуковые события|+26.5|лай, смех") and "вес 0.25" in rows[3]
+    assert rows[4].startswith("Прыжки и падения (бонус)|+23.5|1 прыжок, 1 падение")
+    note = view.details._breakdown.note_text()
+    assert "Итого 94 из 100" in note and "0.6 × лучшее окно" in note and "Веса Viral Score" in note
+
+    view.details.set_clip(ClipResult(tmp_path / "old.mp4", "v.mp4", 0.0, 15.0, 70, "Старый", titles=("Старый",)))
+    assert view.details._breakdown.row_texts() == [] and "новой версией" in view.details._breakdown.note_text()
+
+
+def test_breakdown_roundtrips_through_clip_json_and_bad_breakdown_does_not_hide_the_clip(tmp_path):
+    import json
+
+    from ui.viewmodels.clip_results import ClipResult
+
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    (tmp_path / "a.json").write_text(json.dumps({"clip_file": "a.mp4", "title": "T", "titles": ["T"],
+                                                 "score_breakdown": [p.to_dict() for p in _parts()]}), encoding="utf-8")
+    loaded = ClipResult.from_json(tmp_path / "a.json")
+    assert [p.key for p in loaded.score_breakdown] == ["motion", "presence", "scene", "audio", "motion_events"]
+    assert loaded.score_breakdown[4].bonus and loaded.score_breakdown[3].detail == "лай, смех"
+
+    (tmp_path / "b.mp4").write_bytes(b"x")
+    (tmp_path / "b.json").write_text(json.dumps({"clip_file": "b.mp4", "title": "T", "titles": ["T"], "score_breakdown": [{"oops": 1}]}), encoding="utf-8")
+    broken = ClipResult.from_json(tmp_path / "b.json")
+    assert broken is not None and broken.score_breakdown == ()
+
+
+def test_settings_view_saves_viral_score_weights(qapp):
+    from core.entities.settings import UserSettings
+    from ui.views.settings_view import SettingsView
+
+    view = SettingsView(UserSettings())
+    assert view._weight_spins["weight_audio_event"].value() == 0.25
+    got = []
+    view.settings_saved.connect(got.append)
+    view._weight_spins["weight_audio_event"].setValue(0.5)
+    view._weight_spins["weight_motion_events"].setValue(0.0)
+    view._save_button.click()
+    vs = got[0].viral_score
+    assert vs.weight_audio_event == 0.5 and vs.weight_motion_events == 0.0 and vs.weight_motion_intensity == 0.30

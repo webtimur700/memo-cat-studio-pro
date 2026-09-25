@@ -12,6 +12,7 @@ from loguru import logger
 
 from core.entities.clip import Clip
 from core.entities.llm_issue import LLMIssue
+from core.entities.score import SignalPart
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class ClipResult:
     hashtags: tuple[str, ...] = field(default_factory=tuple)
     transcript: str = ""
     llm_issue: LLMIssue | None = None   # почему нет заголовков/части данных от LLM
+    score_breakdown: tuple[SignalPart, ...] = field(default_factory=tuple)   # из чего сложился Viral Score
 
     @property
     def folder(self) -> Path:
@@ -73,6 +75,7 @@ class ClipResult:
             hashtags=tuple(clip.hashtags),
             transcript=clip.transcript,
             llm_issue=clip.llm_issue,
+            score_breakdown=tuple(clip.moment.breakdown),
         )
 
     @classmethod
@@ -105,10 +108,19 @@ class ClipResult:
                 hashtags=tuple(data.get("hashtags", ())),
                 transcript=data.get("transcript", ""),
                 llm_issue=issue,
+                score_breakdown=_parse_breakdown(data.get("score_breakdown")),
             )
         except (OSError, ValueError, KeyError) as exc:
             logger.warning("Не удалось прочитать результат {}: {}", json_path.name, exc)
             return None
+
+
+def _parse_breakdown(raw) -> tuple[SignalPart, ...]:
+    """Разложение оценки из JSON; битое — пустое (клип из-за этого не пропадает из списка)."""
+    try:
+        return tuple(SignalPart.from_dict(p) for p in raw or ())
+    except (KeyError, TypeError, ValueError):
+        return ()
 
 
 def load_results_from_dir(output_dir: Path) -> list[ClipResult]:

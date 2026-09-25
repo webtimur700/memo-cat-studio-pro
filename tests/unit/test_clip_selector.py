@@ -1,3 +1,4 @@
+import pytest
 from dataclasses import replace
 
 from core.entities.settings import ShortsSettings, UserSettings, ViralScoreSettings
@@ -102,3 +103,46 @@ def test_short_settings_respected_for_tiny_video():
                        viral_score=ViralScoreSettings(queue_threshold=0))
     moments = select_moments(_windows([50, 60]), settings, 10.0)
     assert moments and all(abs(m.duration_sec - 5.0) < 1e-6 for m in moments)
+
+
+def _scored_window(start, motion, presence, scenes, audio, audio_detail="", events=0.0, events_detail=""):
+    from core.entities.settings import ViralScoreSettings
+    from cutting.clip_selector_service import WindowScore
+    from scoring.viral_score_service import ScoreInputs, compute_score_breakdown
+
+    inputs = ScoreInputs(motion, presence, scenes, audio_event=audio, motion_events=events, audio_detail=audio_detail,
+                         motion_events_detail=events_detail)
+    breakdown = compute_score_breakdown(inputs, ViralScoreSettings())
+    return WindowScore(start, start + 5.0, breakdown.score, motion, (), inputs, breakdown)
+
+
+def test_moment_breakdown_sums_to_the_moment_score_and_merges_details():
+    from core.entities.settings import ShortsSettings, UserSettings, ViralScoreSettings
+    from cutting.clip_selector_service import select_moments
+    from dataclasses import replace
+
+    windows = [
+        _scored_window(0.0, 0.9, 1.0, 1, 0.9, "лай", 0.5, "1 прыжок"),
+        _scored_window(5.0, 0.8, 1.0, 2, 1.0, "лай, смех", 0.0),
+        _scored_window(10.0, 0.9, 1.0, 0, 0.7, "смех", 0.5, "1 падение"),
+        _scored_window(15.0, 0.1, 0.0, 0, 0.0),
+    ]
+    settings = replace(UserSettings(), shorts=ShortsSettings(allowed_durations_sec=(15,), min_duration_sec=15, max_duration_sec=15),
+                       viral_score=ViralScoreSettings(queue_threshold=10, relative_top_ratio=0.75))
+    moments = select_moments(windows, settings, 20.0)
+    moment = moments[0]
+    assert moment.breakdown and sum(p.points for p in moment.breakdown) == pytest.approx(moment.viral_score, abs=1.0)
+    by_key = {p.key: p for p in moment.breakdown}
+    assert set(by_key) == {"motion", "presence", "scene", "audio", "motion_events"}
+    assert by_key["audio"].detail.split(", ")[0] == "лай" and "смех" in by_key["audio"].detail
+    assert by_key["scene"].detail == "3 смен(ы)"
+    assert "1 прыжок" in by_key["motion_events"].detail and "1 падение" in by_key["motion_events"].detail
+    assert all(p.points >= 0 for p in moment.breakdown)
+
+
+def test_windows_without_breakdown_give_moment_without_it():
+    from core.entities.settings import UserSettings
+
+    windows = [WindowScore(0.0, 5.0, 90, 0.5), WindowScore(5.0, 10.0, 90, 0.5), WindowScore(10.0, 15.0, 90, 0.5)]
+    moments = select_moments(windows, UserSettings(), 15.0)
+    assert moments and moments[0].breakdown == ()

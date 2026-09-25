@@ -30,6 +30,13 @@ from ui.widgets.glass_panel import GlassPanel
 SUBTITLE_STYLE_PRESETS = ["modern_bold", "minimal_clean", "neon_pop", "classic_yellow"]
 LOGO_POSITIONS = ["top_right", "top_left", "bottom_right", "bottom_left"]
 BANNER_POSITIONS = ["bottom_center", "top_center", "bottom_left", "bottom_right"]
+WEIGHT_FIELDS = [
+    ("weight_motion_intensity", "Движение", "Насколько сильно меняется кадр"),
+    ("weight_face_prominence", "Животное в кадре", "Доля кадров окна, где YOLO видит животное"),
+    ("weight_scene_change", "Смены сцен", "Монтажные склейки внутри окна"),
+    ("weight_audio_event", "Звуковые события", "Лай, мяуканье, мурлыканье, смех (YAMNet); нет модели — сигнал не считается"),
+    ("weight_motion_events", "Прыжки и падения", "Бонус к оценке; не входит в нормировку остальных весов"),
+]
 QUALITY_PRESETS = ["low", "medium", "high"]
 FPS_CHOICES = [24, 25, 30, 50, 60]
 
@@ -82,6 +89,24 @@ class SettingsView(QWidget):
         threshold_row = QWidget()
         threshold_layout = self._build_slider_row(self._threshold_slider, self._threshold_value_label)
         form.addRow(QLabel("Порог Viral Score для очереди"), threshold_layout)
+
+        # --- Веса Viral Score: по разложению оценки в карточке клипа видно, что дало очки ---
+        self._weight_spins: dict[str, QDoubleSpinBox] = {}
+        weights_container = QWidget()
+        weights_layout = QFormLayout(weights_container)
+        weights_layout.setContentsMargins(0, 0, 0, 0)
+        weights_layout.setSpacing(6)
+        for field_name, caption, tooltip in WEIGHT_FIELDS:
+            spin = QDoubleSpinBox()
+            spin.setRange(0.0, 1.0)
+            spin.setSingleStep(0.05)
+            spin.setDecimals(2)
+            spin.setValue(getattr(initial_settings.viral_score, field_name))
+            spin.setToolTip(tooltip)
+            spin.valueChanged.connect(self._on_field_changed)
+            self._weight_spins[field_name] = spin
+            weights_layout.addRow(QLabel(caption), spin)
+        form.addRow(QLabel("Веса Viral Score"), weights_container)
 
         # --- Стиль субтитров ---
         self._subtitle_style_combo = QComboBox()
@@ -244,7 +269,10 @@ class SettingsView(QWidget):
         updated = self._settings.with_field(
             "shorts", allowed_durations_sec=selected_durations or self._settings.shorts.allowed_durations_sec
         )
-        updated = updated.with_field("viral_score", queue_threshold=self._threshold_slider.value())
+        updated = updated.with_field(
+            "viral_score", queue_threshold=self._threshold_slider.value(),
+            **{name: round(spin.value(), 2) for name, spin in self._weight_spins.items()},
+        )
         updated = updated.with_field("subtitles", style_preset=self._subtitle_style_combo.currentText())
         updated = updated.with_field(
             "branding",

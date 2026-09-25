@@ -23,13 +23,15 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from core.entities.detection import Detection
 from core.entities.moment import Moment
 from core.entities.settings import UserSettings
-from scoring.viral_score_service import ScoreBreakdown, ScoreInputs
+from core.entities.score import ScoreBreakdown, SignalPart
+from scoring.viral_score_service import ScoreInputs
 
 MIN_WINDOW_SEC = 1.0
 GAP_BRIDGE_SCORE_RATIO = 0.85       # слабое окно между двумя сильными склеивается, если оно не хуже 85% порога
@@ -114,6 +116,45 @@ def _build_runs(windows: Sequence[WindowScore], threshold: float) -> list[_Run]:
         runs.append(_Run(members, round(combined)))
         i = j + 1
     return runs
+
+
+def _moment_breakdown(run: _Run) -> tuple[SignalPart, ...]:
+    """Из чего сложилась оценка момента: те же 0.6·лучшее окно + 0.4·среднее, но по вкладам сигналов, поэтому сумма очков
+    совпадает с viral_score (до округления). Пусто, если у окон нет разложения (оценка считалась без него)."""
+    if any(w.breakdown is None for w in run.windows):
+        return ()
+    peak = max(run.windows, key=lambda w: w.viral_score)
+    parts: list[SignalPart] = []
+    for peak_part in peak.breakdown.parts:
+        same = [(w, w.breakdown.part(peak_part.key)) for w in run.windows]
+        same = [(w, p) for w, p in same if p is not None]
+        mean_points = sum(p.points for _, p in same) / len(same)
+        details = [p.detail for _, p in sorted(same, key=lambda wp: -wp[1].points) if p.detail]
+        parts.append(SignalPart(
+            key=peak_part.key,
+            label=peak_part.label,
+            value=sum(p.value for _, p in same) / len(same),
+            weight=peak_part.weight,
+            points=PEAK_WEIGHT * peak_part.points + (1 - PEAK_WEIGHT) * mean_points,
+            detail=_merge_details(peak_part.key, details),
+            bonus=peak_part.bonus,
+        ))
+    return tuple(parts)
+
+
+def _merge_details(key: str, details: list[str]) -> str:
+    if not details:
+        return ""
+    if key == "scene":
+        total = sum(int(m.group()) for d in details if (m := re.match(r"\d+", d)))
+        return f"{total} смен(ы)" if total else ""
+    if key == "audio":   # «лай, смех» из разных окон: без повторов, самые заметные первыми
+        seen: list[str] = []
+        for detail in details:
+            seen += [label for label in detail.split(", ") if label not in seen]
+        return ", ".join(seen[:3])
+    unique = list(dict.fromkeys(details))
+    return "; ".join(unique[:3])
 
 
 def _slide_best(
@@ -261,6 +302,7 @@ def select_moments(
                 viral_score=run.score,
                 motion_intensity=sum(w.motion_intensity for w in run.windows) / len(run.windows),
                 detections=peak.detections,
+                breakdown=_moment_breakdown(run),
             )
         )
 

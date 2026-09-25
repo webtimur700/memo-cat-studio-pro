@@ -577,6 +577,7 @@ class PipelineRunner:
             "transcript_original": transcript_original if transcript_original != transcript else "",
             "speech_language": language,
             "music_file": music_file,
+            "score_breakdown": [p.to_dict() for p in moment.breakdown],
             "music_mix": music_mix,
             "llm_issue": llm_issue.to_dict() if llm_issue else None,
             "subtitle_files": {fmt: path.name for fmt, path in (subtitle_files or {}).items()},

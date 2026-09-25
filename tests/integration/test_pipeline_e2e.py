@@ -283,3 +283,13 @@ def test_working_llm_leaves_no_issue(short_video, tmp_path, monkeypatch):
     )
     assert clips[0].llm_issue is None and "llm_warning" not in events
     assert json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))["llm_issue"] is None
+
+
+def test_clip_json_explains_the_score(short_video, tmp_path, monkeypatch):
+    out, clips = _run_with_stub_words(short_video, tmp_path, monkeypatch, _settings())
+    meta = json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))
+    parts = {p["key"]: p for p in meta["score_breakdown"]}
+    assert {"motion", "presence", "scene", "motion_events"} <= set(parts)
+    assert "audio" not in parts                                    # нет YAMNet (no_models) — сигнал не считается и не показывается
+    assert sum(p["points"] for p in parts.values()) == pytest.approx(meta["viral_score"], abs=1.0)
+    assert clips[0].moment.breakdown and clips[0].moment.viral_score == meta["viral_score"]

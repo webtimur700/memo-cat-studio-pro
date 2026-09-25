@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from core.entities.score import ScoreBreakdown, SignalPart
 from core.entities.settings import ViralScoreSettings
 
 SCENE_CHANGE_SATURATION_COUNT = 2
@@ -42,26 +43,6 @@ class ScoreInputs:
     motion_events: float = 0.0         # 0..1, прыжки/падения/рывки окна (бонус); 0 — не найдены или не проверялось
     audio_detail: str = ""             # какие именно звуки («лай, смех») — для показа пользователю
     motion_events_detail: str = ""     # «2 прыжка, падение»
-
-
-@dataclass(frozen=True, slots=True)
-class SignalPart:
-    key: str
-    label: str
-    value: float          # 0..1: насколько выражен сигнал
-    weight: float         # вес из настроек
-    points: float         # вклад в итоговые 0..100
-    detail: str = ""
-    bonus: bool = False   # не входит в нормировку (motion_events)
-
-
-@dataclass(frozen=True, slots=True)
-class ScoreBreakdown:
-    score: int
-    parts: tuple[SignalPart, ...]
-
-    def part(self, key: str) -> SignalPart | None:
-        return next((p for p in self.parts if p.key == key), None)
 
 
 def compute_score_breakdown(inputs: ScoreInputs, weights: ViralScoreSettings) -> ScoreBreakdown:
