@@ -82,10 +82,10 @@ branding:
 
 audio:
   music_enabled: true          # фоновая музыка из music_library_path; папка пуста — клип без музыки (запись в лог)
-  music_volume: 0.2            # громкость трека, 0..1 (оригинальный звук клипа остаётся как есть)
+  music_offset_db: -14         # музыка на столько дБ (LUFS) тише оригинального звука клипа; оригинал остаётся как есть
   music_library_path: "assets/music/"   # положите сюда музыку без авторских ограничений (в git не попадает)
   duck_on_speech: true
-  duck_level_db: -12
+  duck_level_db: -12           # на речи музыка тише ещё на столько дБ
 
 export:
   codec_video: h264

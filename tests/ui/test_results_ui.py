@@ -220,12 +220,12 @@ def test_settings_view_saves_music_and_queue_options(qapp):
     received = []
     view.settings_saved.connect(received.append)
     view._music_checkbox.setChecked(False)
-    view._music_volume_slider.setValue(35)
+    view._music_offset_slider.setValue(-18)
     view._duck_checkbox.setChecked(False)
     view._concurrent_spin.setValue(3)
     view._save_button.click()
     saved = received[0]
-    assert (saved.audio.music_enabled, saved.audio.music_volume, saved.audio.duck_on_speech) == (False, 0.35, False)
+    assert (saved.audio.music_enabled, saved.audio.music_offset_db, saved.audio.duck_on_speech) == (False, -18.0, False)
     assert saved.batch.max_concurrent_videos == 3
 
 

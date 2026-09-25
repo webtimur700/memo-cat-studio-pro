@@ -196,6 +196,9 @@ def test_music_from_library_is_mixed_in_and_recorded(short_video, tmp_path, monk
     assert _audio_stream_count(clips[0].output_path) == 1
     meta = json.loads(clips[0].metadata_path.read_text(encoding="utf-8"))
     assert meta["music_file"] == "song.wav"
+    mix = meta["music_mix"]                           # замеры уровня пишутся в JSON
+    assert mix["offset_db"] == -14.0 and mix["duck_db"] == -12.0
+    assert mix["target_lufs"] == pytest.approx(mix["clip_lufs"] - 14.0, abs=0.02)
     assert list(out.glob("_tmp_*")) == []
 
 

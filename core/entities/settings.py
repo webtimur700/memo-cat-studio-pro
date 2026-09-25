@@ -99,7 +99,7 @@ class AudioSettings:
     """Фоновая музыка: треки лежат в music_library_path (кладёт пользователь), под речью приглушается."""
 
     music_enabled: bool = True
-    music_volume: float = 0.2            # линейный множитель громкости трека (0..1) относительно оригинала
+    music_offset_db: float = -14.0       # на сколько дБ (LUFS) музыка тише оригинального звука клипа
     duck_on_speech: bool = True
     duck_level_db: float = -12.0         # на сколько дБ музыка тише, пока в клипе говорят
     music_library_path: str = "assets/music/"
@@ -108,7 +108,7 @@ class AudioSettings:
     def from_raw(cls, raw: dict[str, Any]) -> "AudioSettings":
         return cls(
             music_enabled=bool(raw.get("music_enabled", True)),
-            music_volume=min(1.0, max(0.0, float(raw.get("music_volume", 0.2)))),
+            music_offset_db=min(0.0, max(-40.0, float(raw.get("music_offset_db", -14.0)))),
             duck_on_speech=bool(raw.get("duck_on_speech", True)),
             duck_level_db=float(raw.get("duck_level_db", -12.0)),
             music_library_path=str(raw.get("music_library_path", "assets/music/")),

@@ -1,5 +1,10 @@
 """Фоновая музыка клипа с приглушением на речи (пункт ТЗ «МУЗЫКА»).
 
+Громкость музыки задаётся не множителем, а смещением в дБ ниже оригинального звука клипа: громкость клипа
+и трека измеряются (ffmpeg ebur128, LUFS), трек подтягивается так, чтобы звучать на music_offset_db ниже
+оригинала, а на речи приглушается ещё сильнее (duck_level_db). Тихий клип получает тихую музыку, громкий —
+громче, а трек с любой мастеринговой громкостью ложится на один и тот же уровень относительно клипа.
+
 Треки берутся из assets/music/ (кладёт пользователь; в репозиторий музыка не добавляется —
 чужой трек даст претензию Content ID на YouTube). Папка пуста — клип остаётся без музыки,
 в лог пишется причина. Оригинальный звук клипа (в том числе звуки животных) сохраняется:
@@ -9,10 +14,13 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
 import zlib
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from loguru import logger
@@ -26,6 +34,71 @@ DUCK_PAD_SEC = 0.15       # музыка затихает чуть ДО перв
 DUCK_RAMP_SEC = 0.25      # плавность спада/возврата громкости
 FADE_IN_SEC = 0.5
 FADE_OUT_SEC = 1.0
+
+MIN_MEANINGFUL_LUFS = -50.0      # тише этого у клипа «нет звука»: смещение относительно него ничего не значит
+MUSIC_ONLY_LUFS = -18.0          # уровень музыки, когда у клипа нет своего звука
+MAX_GAIN_DB = 15.0               # подтягивать очень тихий трек сильнее не имеет смысла (шум)
+MIN_GAIN_DB = -40.0
+
+
+@dataclass(frozen=True, slots=True)
+class MixReport:
+    """Что измерили и какой сделали микс (пишется в JSON клипа для разбора)."""
+
+    clip_lufs: float | None          # громкость оригинального звука клипа (None — звука нет)
+    track_lufs: float                # громкость трека
+    target_lufs: float               # на каком уровне звучит музыка (вне речи)
+    gain_db: float                   # усиление трека
+    offset_db: float                 # заданное смещение относительно оригинала
+    duck_db: float
+
+    def to_dict(self) -> dict:
+        return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in {
+            "clip_lufs": self.clip_lufs, "track_lufs": self.track_lufs, "target_lufs": self.target_lufs,
+            "gain_db": self.gain_db, "offset_db": self.offset_db, "duck_db": self.duck_db,
+        }.items()}
+
+
+_LUFS_RE = re.compile(r"^\s*I:\s+(-?\d+(?:\.\d+)?)\s+LUFS", re.MULTILINE)
+
+
+def measure_lufs(path: Path, start_sec: float | None = None, duration_sec: float | None = None) -> float | None:
+    """Интегральная громкость звука файла (ebur128, LUFS); None — нет звуковой дорожки или тишина."""
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats"]
+    if start_sec is not None:
+        command += ["-ss", f"{start_sec:.3f}"]
+    if duration_sec is not None:
+        command += ["-t", f"{duration_sec:.3f}"]
+    command += ["-i", str(path), "-vn", "-af", "ebur128=framelog=quiet", "-f", "null", "-"]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    matches = _LUFS_RE.findall(result.stderr)
+    if not matches:
+        return None
+    value = float(matches[-1])
+    return value if value > -69.0 else None      # -70 LUFS — ebur128 так пишет «тишина»
+
+
+@lru_cache(maxsize=256)
+def _track_lufs_cached(path: str, mtime_ns: int, duration_key: float | None) -> float | None:
+    return measure_lufs(Path(path), None, duration_key)
+
+
+def track_lufs(path: Path, duration_sec: float | None = None) -> float | None:
+    """Громкость той части трека, что реально прозвучит (музыка всегда начинается с начала трека; трек короче
+    клипа зацикливается, тогда это весь трек). Громкость по ходу трека меняется, поэтому интеграл по всему
+    треку давал бы уровень на пару дБ мимо."""
+    key = None if duration_sec is None else round(duration_sec * 2) / 2   # кэш по полусекундам
+    return _track_lufs_cached(str(path), path.stat().st_mtime_ns, key)
+
+
+def plan_gain(clip_lufs: float | None, track_loudness: float, offset_db: float) -> tuple[float, float]:
+    """(усиление трека в дБ, целевой уровень музыки в LUFS): музыка на offset_db ниже оригинала клипа."""
+    if clip_lufs is None or clip_lufs < MIN_MEANINGFUL_LUFS:
+        target = MUSIC_ONLY_LUFS
+    else:
+        target = clip_lufs + min(0.0, offset_db)
+    gain = max(MIN_GAIN_DB, min(MAX_GAIN_DB, target - track_loudness))
+    return gain, track_loudness + gain
 
 
 def list_tracks(library: Path) -> list[Path]:
@@ -91,16 +164,22 @@ def mix_music(
     video_path: Path,
     music_path: Path,
     clip_duration_sec: float,
-    volume: float,
+    offset_db: float,
     duck_intervals: list[tuple[float, float]],
     duck_db: float,
     audio_bitrate_kbps: int = 192,
     audio_codec: str = "aac",
-) -> None:
-    """Подмешивает музыку в звук video_path (файл заменяется). Видео копируется без перекодирования."""
-    music_chain = [
-        f"volume={max(0.0, volume):.4f}",
-    ]
+) -> MixReport:
+    """Подмешивает музыку в звук video_path (файл заменяется), видео копируется без перекодирования.
+    Музыка звучит на offset_db ниже оригинала клипа (по LUFS), на речи — ещё на duck_db тише."""
+    has_audio = _has_audio(video_path)
+    clip_loudness = measure_lufs(video_path) if has_audio else None
+    music_loudness = track_lufs(music_path, clip_duration_sec)
+    if music_loudness is None:
+        raise ValueError(f"не удалось измерить громкость трека {music_path.name}")
+    gain_db, target = plan_gain(clip_loudness, music_loudness, offset_db)
+
+    music_chain = [f"volume={gain_db:.2f}dB"]
     expression = build_duck_expression(duck_intervals, duck_db)
     if expression is not None:
         music_chain.append(f"volume='{expression}':eval=frame")
@@ -110,13 +189,13 @@ def mix_music(
 
     with tempfile.TemporaryDirectory(prefix="memo_cat_music_") as tmp_dir:
         mixed = Path(tmp_dir) / f"mixed{video_path.suffix}"
-        if _has_audio(video_path):
+        if has_audio:
             graph = (
                 f"[1:a]{fmt},{','.join(music_chain)}[m];[0:a]{fmt}[o];"
-                f"[o][m]amix=inputs=2:duration=first:normalize=0:dropout_transition=0[a]"
+                f"[o][m]amix=inputs=2:duration=first:normalize=0:dropout_transition=0,alimiter=limit=0.95[a]"
             )
         else:   # у клипа нет своего звука — остаётся одна музыка
-            graph = f"[1:a]{fmt},{','.join(music_chain)}[a]"
+            graph = f"[1:a]{fmt},{','.join(music_chain)},alimiter=limit=0.95[a]"
         command = [
             "ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
             "-i", str(video_path), "-stream_loop", "-1", "-i", str(music_path),
@@ -128,5 +207,11 @@ def mix_music(
         if result.returncode != 0:
             raise FFmpegExecutionError(command, result.returncode, result.stderr)
         shutil.move(str(mixed), str(video_path))
-    logger.info("Музыка «{}» добавлена в {} (громкость {:.2f}, приглушение на речи: {} отрезков)",
-                music_path.name, video_path.name, volume, len(duck_intervals))
+    report = MixReport(clip_loudness, music_loudness, target, gain_db, offset_db, duck_db)
+    logger.info(
+        "Музыка «{}» в {}: оригинал {} LUFS, трек {:.1f} LUFS, усиление {:+.1f} дБ -> музыка {:.1f} LUFS ({:+.0f} дБ от оригинала), "
+        "приглушение на речи: {} отрезков",
+        music_path.name, video_path.name, "нет" if clip_loudness is None else f"{clip_loudness:.1f}", music_loudness,
+        gain_db, target, offset_db, len(duck_intervals),
+    )
+    return report

@@ -345,7 +345,7 @@ class PipelineRunner:
             if subtitle_ass_path is not None and subtitle_ass_path not in subtitle_files.values():
                 subtitle_ass_path.unlink(missing_ok=True)
 
-        music_file = self._add_music(output_path, speech_words, settings)
+        music_file, music_mix = self._add_music(output_path, speech_words, settings)
         transcript = " ".join(w.text for w in words)
         cover_frame = self._pick_cover_frame(video_path, moment)
         content = self._generate_content(transcript, cover_frame)
@@ -357,6 +357,7 @@ class PipelineRunner:
             transcript_original=original_transcript, language=self.last_moment_language,
             subtitle_files=subtitle_files,
             music_file=music_file,
+            music_mix=music_mix,
             llm_issue=llm_issue,
         )
 
@@ -375,28 +376,30 @@ class PipelineRunner:
         )
 
     # ------------------------------------------------------------------
-    def _add_music(self, output_path: Path, speech_words: list[WordTiming], settings: UserSettings) -> str | None:
-        """Фоновая музыка из assets/music/ (приглушается на речи). Возвращает имя трека или None (без музыки)."""
+    def _add_music(
+        self, output_path: Path, speech_words: list[WordTiming], settings: UserSettings
+    ) -> tuple[str | None, dict | None]:
+        """Фоновая музыка из assets/music/ (на music_offset_db ниже оригинала, на речи тише). Возвращает (имя трека, замеры)."""
         audio = settings.audio
         if not audio.music_enabled:
-            return None
+            return None, None
         library = Path(audio.music_library_path)
         library = library if library.is_absolute() else PROJECT_ROOT / library
         tracks = list_tracks(library)
         if not tracks:
             logger.info("Музыка не добавлена к {}: в {} нет треков (положите туда свою музыку без авторских ограничений)",
                         output_path.name, library)
-            return None
+            return None, None
         try:
             duration = probe_duration(output_path)
             track = pick_track(tracks, output_path.stem, duration)
             intervals = speech_intervals(speech_words, duration) if audio.duck_on_speech else []
-            mix_music(output_path, track, duration, audio.music_volume, intervals, audio.duck_level_db,
-                      audio_codec=settings.export.codec_audio)
-            return track.name
+            report = mix_music(output_path, track, duration, audio.music_offset_db, intervals, audio.duck_level_db,
+                               audio_codec=settings.export.codec_audio)
+            return track.name, report.to_dict()
         except Exception as exc:
             logger.warning("Не удалось добавить музыку к {}: {} — клип остаётся с оригинальным звуком", output_path.name, exc)
-            return None
+            return None, None
 
     def _build_branding(self, settings: UserSettings, zone: SafeZone | None = None) -> BrandingOverlay | None:
         """Логотип (assets/logo/logo.png или "Memo Cat" по умолчанию) + Subscribe."""
@@ -513,6 +516,7 @@ class PipelineRunner:
         language: str | None = None,
         subtitle_files: dict[str, Path] | None = None,
         music_file: str | None = None,
+        music_mix: dict | None = None,
         llm_issue: LLMIssue | None = None,
     ) -> Path | None:
         metadata_path = output_path.with_suffix(".json")
@@ -531,6 +535,7 @@ class PipelineRunner:
             "transcript_original": transcript_original if transcript_original != transcript else "",
             "speech_language": language,
             "music_file": music_file,
+            "music_mix": music_mix,
             "llm_issue": llm_issue.to_dict() if llm_issue else None,
             "subtitle_files": {fmt: path.name for fmt, path in (subtitle_files or {}).items()},
             "llm_errors": list(content.errors),
