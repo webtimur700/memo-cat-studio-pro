@@ -230,3 +230,77 @@ def test_old_clip_json_without_issue_still_explains_missing_titles(tmp_path):
                                                    "llm_errors": ["заголовки: Не удалось подготовить модель"]}), encoding="utf-8")
     result = ClipResult.from_json(tmp_path / "old.json")
     assert result.llm_issue is not None and "Не удалось подготовить модель" in result.llm_issue.message
+
+
+# --------------------------------------------------------------------------- сохранение настроек и история
+
+
+def test_settings_survive_restart_and_history_is_visible(window, tmp_path, monkeypatch):
+    from core.entities.clip import Clip
+    from core.entities.moment import Moment
+
+    # 1. пользователь меняет настройки и сохраняет
+    view = window.settings_view
+    view._fps_combo.setCurrentText("24")
+    view._bitrate_spin.setValue(8)
+    view._reserve_spin.setValue(4.5)
+    view._music_offset_slider.setValue(-18)
+    view._concurrent_spin.setValue(2)
+    view._save_button.click()
+    assert window._settings.export.fps == 24 and window._scheduler._max_concurrent == 2
+
+    # 2. обрабатывается видео: клип с файлами попадает в историю
+    out = tmp_path / "out"
+    out.mkdir(exist_ok=True)
+
+    class _ClipRunner(_FakeRunner):
+        def process_video(self, video_path, settings, progress=None):
+            clip_file = out / f"{Path(video_path).stem}_moment1.mp4"
+            clip_file.write_bytes(b"x")
+            return [Clip(moment=Moment(10.0, 25.0, 88, 0.5), output_path=clip_file, title="Кот в шоке")]
+
+    monkeypatch.setattr(pipeline_worker, "PipelineRunner", _ClipRunner)
+    monkeypatch.setattr(main_window, "EXPORT_OUTPUT_DIR", out)
+    window.project_view.videos_added.emit([Path("/v/cats.mp4"), Path("/v/dogs.mp4")])
+    assert _pump(lambda: window._scheduler.is_idle and not window._workers)
+    assert any("✅" in t and "cats.mp4" in t and "1 клип" in t for t in window.project_view.project_texts())
+
+    # 3. «перезапуск»: новое окно с той же базой
+    window._db.close()
+    reopened = main_window.MainWindow()
+    try:
+        assert reopened._settings.export.fps == 24 and reopened._settings.export.bitrate_mbps == 8
+        assert reopened._settings.llm.pipeline_reserve_gb == 4.5 and reopened._settings.audio.music_offset_db == -18.0
+        assert reopened._settings.batch.max_concurrent_videos == 2
+        assert reopened.settings_view._fps_combo.currentText() == "24" and reopened.settings_view._bitrate_spin.value() == 8
+        assert reopened.settings_view._reserve_spin.value() == 4.5 and reopened.settings_view._music_offset_slider.value() == -18
+        texts = reopened.project_view.project_texts()
+        assert any("✅" in t and "cats.mp4" in t and "1 клип" in t for t in texts)      # обработанное видео и число клипов
+        assert any("dogs.mp4" in t and "✅" in t for t in texts)
+        assert reopened._history.clips_for_project(reopened._history.projects()[0].id) is not None
+        reopened._open_project(Path("/v/cats.mp4"))                                     # двойной щелчок: клипы открываются
+    finally:
+        reopened._db.close()
+
+
+def test_run_interrupted_by_closing_is_marked_on_next_start(window, monkeypatch):
+    import threading
+
+    release = threading.Event()
+
+    class _Hanging(_FakeRunner):
+        def process_video(self, video_path, settings, progress=None):
+            release.wait(5)
+            return []
+
+    monkeypatch.setattr(pipeline_worker, "PipelineRunner", _Hanging)
+    window.project_view.videos_added.emit([Path("/v/long.mp4")])
+    assert _pump(lambda: window._history.projects() and window._history.projects()[0].status == "running")
+    window._db.close()                  # приложение закрыли посреди обработки (без finish_run)
+    release.set()
+    _pump(lambda: not window._workers, timeout=3)
+    reopened = main_window.MainWindow()
+    try:
+        assert any("⚠️" in t and "long.mp4" in t and "прервано" in t for t in reopened.project_view.project_texts())
+    finally:
+        reopened._db.close()

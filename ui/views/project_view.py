@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from database.repositories.history_repository import STATUS_LABELS
 from ui.widgets.glass_panel import GlassPanel
 
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
@@ -78,6 +79,7 @@ class ProjectView(QWidget):
     """Основной экран: зона загрузки сверху, список проектов снизу."""
 
     videos_added = Signal(list)  # list[Path] — наружу, к application-слою
+    project_activated = Signal(object)  # Path исходного видео: двойной щелчок — открыть его клипы
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -99,21 +101,50 @@ class ProjectView(QWidget):
         self._project_list.setObjectName("surfaceCard")
         self._project_list.setSpacing(4)
 
+        self._project_list.itemActivated.connect(lambda item: self.project_activated.emit(Path(item.data(1000))))
+        self._items: dict[str, QListWidgetItem] = {}   # путь -> строка списка (без дублей)
+
         root_layout.addWidget(self._drop_zone)
         root_layout.addLayout(list_header)
         root_layout.addWidget(self._project_list, stretch=1)
 
     def _on_files_added(self, paths: list[Path]) -> None:
         for path in paths:
-            item = QListWidgetItem(f"⏳  {path.name}")
-            item.setData(1000, str(path))
-            self._project_list.addItem(item)
+            self.mark_project_status(path, "⏳")
         self.videos_added.emit(paths)
 
-    def mark_project_status(self, path: Path, status_label: str) -> None:
-        """Вызывается viewmodel'ом при обновлении статуса пайплайна для проекта."""
-        for i in range(self._project_list.count()):
-            item = self._project_list.item(i)
-            if item.data(1000) == str(path):
-                item.setText(f"{status_label}  {path.name}")
-                break
+    def load_history(self, records) -> None:
+        """Проекты из базы (ProjectRecord): видны после перезапуска, со статусом и числом клипов."""
+        for record in reversed(records):   # records: новые сверху; вставляем так, чтобы порядок сохранился
+            self.mark_project_status(record.path, STATUS_LABELS.get(record.status, "•"), self._details(record))
+
+    @staticmethod
+    def _details(record) -> str:
+        from datetime import datetime
+
+        when = datetime.fromtimestamp(record.last_run_at).strftime("%d.%m %H:%M") if record.last_run_at else ""
+        parts = []
+        if record.clip_count:
+            parts.append(f"{record.clip_count} клип(ов)")
+        if record.status == "failed" and record.error:
+            parts.append(f"ошибка: {record.error[:60]}")
+        elif record.status == "interrupted":
+            parts.append("прервано при закрытии приложения")
+        if when:
+            parts.append(when)
+        return " · ".join(parts)
+
+    def mark_project_status(self, path: Path, status_label: str, details: str = "") -> None:
+        """Строка проекта: «статус имя · подробности»; повторное добавление того же файла обновляет строку."""
+        text = f"{status_label}  {path.name}" + (f"  ·  {details}" if details else "")
+        item = self._items.get(str(path))
+        if item is None:
+            item = QListWidgetItem(text)
+            item.setData(1000, str(path))
+            self._project_list.insertItem(0, item)
+            self._items[str(path)] = item
+        else:
+            item.setText(text)
+
+    def project_texts(self) -> list[str]:
+        return [self._project_list.item(i).text() for i in range(self._project_list.count())]

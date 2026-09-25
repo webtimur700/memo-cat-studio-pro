@@ -128,6 +128,15 @@ class ExportPlan:
     все клипы падали на экспорте / брали не тот участок видео)."""
 
 
+def _video_quality_args(settings: ExportSettings, quality) -> list[str]:
+    """Кодирование видео по настройкам: CRF и пресет задают качество, maxrate/bufsize — потолок битрейта.
+    Применяется к обоим проходам: финальный клип получается во втором (наложение плашки/логотипа)."""
+    return [
+        "-c:v", "libx264", "-preset", quality.x264_preset, "-crf", str(quality.crf),
+        "-maxrate", f"{settings.bitrate_mbps}M", "-bufsize", f"{2 * settings.bitrate_mbps}M",
+    ]
+
+
 class ExportService:
     def __init__(self) -> None:
         if shutil.which("ffmpeg") is None:
@@ -166,9 +175,7 @@ class ExportService:
                 "-t", f"{clip_duration:.3f}",
                 "-vf", filter_chain,
                 "-r", str(plan.settings.fps),
-                "-c:v", "libx264",
-                "-preset", quality.x264_preset,
-                "-crf", str(quality.crf),
+                *_video_quality_args(plan.settings, quality),
                 "-c:a", plan.settings.codec_audio,
                 "-b:a", f"{quality.audio_bitrate_kbps}k",
                 "-movflags", "+faststart",
@@ -202,7 +209,9 @@ class ExportService:
                 "-i", str(base_output),
                 "-i", str(banner_overlay_path),
                 "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
-                "-c:a", "copy",
+                "-r", str(plan.settings.fps), "-pix_fmt", "yuv420p",
+                *_video_quality_args(plan.settings, quality),
+                "-c:a", "copy", "-movflags", "+faststart",
                 str(plan.output_path),
             ]
             _run(overlay_cmd)

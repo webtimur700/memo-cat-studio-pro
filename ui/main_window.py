@@ -30,6 +30,9 @@ from core.entities.llm_issue import LLMIssue
 from core.entities.settings import UserSettings
 from llm.lm_studio_provider import LMStudioConfig
 from llm.managed_provider import ManagedLMStudio
+from database.db import Database
+from database.repositories.history_repository import STATUS_LABELS, HistoryRepository
+from database.repositories.settings_repository import SettingsRepository
 from pipeline.cache_cleaner import CacheCleaner, ResultGroup
 from pipeline.job_scheduler import JobScheduler
 from pipeline.shared_models import SharedModels
@@ -44,6 +47,7 @@ from ui.viewmodels.clip_results import ClipResult, load_results_from_dir
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
 EXPORT_OUTPUT_DIR = PROJECT_ROOT / "export" / "output"
+DB_PATH = PROJECT_ROOT / "database" / "memo_cat.db"
 
 
 class MainWindow(QMainWindow):
@@ -55,7 +59,14 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         settings_path = PROJECT_ROOT / "config" / "default_settings.yaml"
-        self._settings = UserSettings.load_from_yaml(settings_path)
+        self._defaults = UserSettings.load_from_yaml(settings_path)
+        # настройки, проекты и история — в SQLite: изменённые пользователем поля переживают перезапуск
+        self._db = Database(DB_PATH)
+        self._settings_repo = SettingsRepository(self._db)
+        self._history = HistoryRepository(self._db)
+        self._settings = self._settings_repo.load(self._defaults)
+        self._history.mark_interrupted()
+        self._job_history: dict[str, dict] = {}   # job_id -> {"project_id", "run_id", "path"}
         self._workers: dict[str, PipelineWorker] = {}
         self._job_videos: dict[str, str] = {}   # job_id -> имя исходного видео
         self._job_paths: dict[str, Path] = {}   # job_id -> путь к видео, пока задача ждёт очереди или идёт
@@ -101,6 +112,8 @@ class MainWindow(QMainWindow):
 
         # результаты прошлых запусков (json + клипы в папке экспорта) не пропадают после перезапуска
         self.editor_view.add_results(load_results_from_dir(EXPORT_OUTPUT_DIR))
+        self.project_view.load_history(self._history.projects())
+        self.project_view.project_activated.connect(self._open_project)
 
     def _build_sidebar(self) -> tuple[QWidget, QButtonGroup]:
         sidebar = QWidget()
@@ -145,6 +158,7 @@ class MainWindow(QMainWindow):
                 self._llm.begin_use()   # пока идёт анализ, модель грузится в фоне; выгрузка — когда очередь опустеет
             self.batch_view.add_jobs([(job_id, path.name) for job_id, path in jobs])
             for job_id, path in jobs:
+                self._job_history[job_id] = {"project_id": self._history.upsert_project(path), "run_id": None, "path": path}
                 self._job_videos[job_id] = path.name
                 self._job_paths[job_id] = path
                 self._scheduler.submit(job_id)   # свободный слот — запуск сразу, иначе «В очереди»
@@ -156,6 +170,7 @@ class MainWindow(QMainWindow):
 
         def on_settings_saved(updated_settings: UserSettings) -> None:
             self._settings = updated_settings
+            self._settings_repo.save(updated_settings, self._defaults)
             self._scheduler.set_max_concurrent(updated_settings.batch.max_concurrent_videos)
             self._llm.set_reserve_mib(updated_settings.llm.pipeline_reserve_gb * 1024)
             self._cleaner = self._make_cleaner()
@@ -214,6 +229,7 @@ class MainWindow(QMainWindow):
             logger.exception("Не удалось запустить обработку {}: {}", job_id, exc)
             self._job_videos.pop(job_id, None)
             self.batch_view.mark_failed(job_id, str(exc))
+            self._record_finish(job_id, "failed", (), str(exc))
             QTimer.singleShot(0, lambda: self._finish_job(job_id))
 
     def _launch_worker(self, job_id: str) -> None:
@@ -236,6 +252,10 @@ class MainWindow(QMainWindow):
         # QThread уничтожается Python-сборщиком мусора, если на него не держать ссылку — держим до завершения.
         self._workers[job_id] = worker
         self.batch_view.update_progress(job_id, JobStage.ANALYZING)
+        record = self._job_history.get(job_id)
+        if record is not None:
+            record["run_id"] = self._history.start_run(record["project_id"])
+            self.project_view.mark_project_status(record["path"], STATUS_LABELS["running"])
         worker.start()
         logger.info("Пайплайн запущен для видео: {}", path)
 
@@ -277,6 +297,7 @@ class MainWindow(QMainWindow):
         self.batch_view.update_progress(job_id, JobStage.DONE, moments_found=len(clips))
         logger.info("Готово: {} клип(ов) для job {}", len(clips), job_id)
         source_name = self._job_videos.pop(job_id, "")
+        self._record_finish(job_id, "done", clips)
         self._finish_job(job_id)
         if not clips:
             return
@@ -299,7 +320,31 @@ class MainWindow(QMainWindow):
     def _on_pipeline_failed(self, job_id: str, error_message: str) -> None:
         self.batch_view.mark_failed(job_id, error_message)
         self._job_videos.pop(job_id, None)
+        self._record_finish(job_id, "failed", (), error_message)
         self._finish_job(job_id)
+
+    def _record_finish(self, job_id: str, status: str, clips=(), error: str | None = None) -> None:
+        """История: запуск завершён (клипы и статус — в базу, строка проекта — обновить)."""
+        record = self._job_history.pop(job_id, None)
+        if record is None:
+            return
+        if record["run_id"] is None:   # задача не успела стартовать (например, не запустился поток)
+            record["run_id"] = self._history.start_run(record["project_id"])
+        self._history.finish_run(record["run_id"], record["project_id"], status, clips, error)
+        project = next((p for p in self._history.projects() if p.id == record["project_id"]), None)
+        if project is not None:
+            self.project_view.mark_project_status(record["path"], STATUS_LABELS[status], self.project_view._details(project))
+
+    def _open_project(self, path: Path) -> None:
+        """Двойной щелчок по проекту: открыть его клипы в редакторе."""
+        project = next((p for p in self._history.projects() if p.path == path), None)
+        clips = self._history.clips_for_project(project.id) if project is not None else []
+        clips = [c for c in clips if c.clip_path.is_file()]
+        if not clips:
+            logger.info("У проекта {} нет готовых клипов", path.name)
+            return
+        self.show_page(1)
+        self.editor_view.clip_list.select_by_time(path.name, clips[0].start_sec)
 
     def load_demo_timeline(self) -> None:
         """Вспомогательный метод для ручной проверки timeline_view без

@@ -31,6 +31,7 @@ SUBTITLE_STYLE_PRESETS = ["modern_bold", "minimal_clean", "neon_pop", "classic_y
 LOGO_POSITIONS = ["top_right", "top_left", "bottom_right", "bottom_left"]
 BANNER_POSITIONS = ["bottom_center", "top_center", "bottom_left", "bottom_right"]
 QUALITY_PRESETS = ["low", "medium", "high"]
+FPS_CHOICES = [24, 25, 30, 50, 60]
 
 
 class SettingsView(QWidget):
@@ -195,6 +196,24 @@ class SettingsView(QWidget):
         self._concurrent_spin.valueChanged.connect(self._on_field_changed)
         form.addRow(QLabel("Видео одновременно"), self._concurrent_spin)
 
+        # --- FPS и битрейт клипа ---
+        self._fps_combo = QComboBox()
+        self._fps_combo.addItems([str(f) for f in FPS_CHOICES])
+        self._fps_combo.setCurrentText(str(initial_settings.export.fps))
+        if self._fps_combo.currentText() != str(initial_settings.export.fps):   # нестандартный fps из yaml/базы
+            self._fps_combo.addItem(str(initial_settings.export.fps))
+            self._fps_combo.setCurrentText(str(initial_settings.export.fps))
+        self._fps_combo.currentTextChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Частота кадров (FPS)"), self._fps_combo)
+
+        self._bitrate_spin = QSpinBox()
+        self._bitrate_spin.setRange(1, 50)
+        self._bitrate_spin.setSuffix(" Мбит/с")
+        self._bitrate_spin.setValue(initial_settings.export.bitrate_mbps)
+        self._bitrate_spin.setToolTip("Потолок видеобитрейта клипа (вместе с качеством экспорта: кадр не хуже пресета, поток не выше этого)")
+        self._bitrate_spin.valueChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Битрейт видео (максимум)"), self._bitrate_spin)
+
         self._save_button = QPushButton("Сохранить настройки")
         self._save_button.setObjectName("primaryButton")
         self._save_button.setEnabled(False)
@@ -237,7 +256,10 @@ class SettingsView(QWidget):
             ai_zoom_enabled=self._ai_zoom_checkbox.isChecked(),
             max_zoom_factor=self._zoom_factor_slider.value() / 10,
         )
-        updated = updated.with_field("export", quality_preset=self._quality_combo.currentText())
+        updated = updated.with_field(
+            "export", quality_preset=self._quality_combo.currentText(), fps=int(self._fps_combo.currentText()),
+            bitrate_mbps=self._bitrate_spin.value(),
+        )
         updated = updated.with_field(
             "safe_zone", **{name: spin.value() for name, spin in self._safe_zone_spins.items()}
         )

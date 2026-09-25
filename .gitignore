@@ -38,3 +38,7 @@ export/output/
 # Музыку кладёт пользователь сам (чужой трек = претензия Content ID на YouTube): в репозиторий не попадает
 assets/music/*
 !assets/music/README.md
+
+# Локальная база SQLite (настройки, проекты, история) — у каждого своя
+database/*.db
+database/*.db-*
