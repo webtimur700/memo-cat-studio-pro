@@ -25,11 +25,32 @@ from core.entities.settings import UserSettings  # noqa: E402
 from pipeline.pipeline_runner import PipelineRunner  # noqa: E402
 
 
+class _FakeLLM:
+    """Отвечает канонической заглушкой через `delay` секунд: замер конвейера при известной задержке LLM."""
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+
+    def complete(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+        time.sleep(self.delay)
+        if "нумерованным списком" in system_prompt:
+            return "\n".join(f"{i}. Заголовок {i}" for i in range(1, 11))
+        if "Отвечай СТРОГО списком хештегов" in system_prompt:
+            return " ".join(f"#тег{i}" for i in range(1, 31))
+        return "Описание клипа."
+
+    def list_models(self) -> list[str]:
+        return ["fake"]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("video")
     parser.add_argument("--llm", action="store_true")
     parser.add_argument("--keep", help="куда сохранить клипы (по умолчанию — временная папка)")
+    parser.add_argument("--fake-llm-sec", type=float, default=0.0,
+                        help="вместо LM Studio — заглушка, отвечающая на каждый из 3 запросов за N/3 с (для замера перекрытия LLM и кодирования)")
+    parser.add_argument("--no-overlap", action="store_true", help="тексты LLM по очереди с кодированием (как было до оптимизации)")
     parser.add_argument("--json")
     parser.add_argument("--encoder", choices=("auto", "vaapi", "x264"), default="auto")
     parser.add_argument("--max-clips", type=int, default=0, help="0 — сколько выберет пайплайн")
@@ -48,8 +69,11 @@ def main() -> None:
         llm = ManagedLMStudio(LMStudioConfig(base_url="http://localhost:1234/v1", timeout_sec=900))
         llm.start_loading_in_background()
 
+    if args.fake_llm_sec > 0:
+        llm = _FakeLLM(args.fake_llm_sec / 3)
+
     def run(out: Path) -> None:
-        runner = PipelineRunner(models_dir=ROOT / "models", output_dir=out, llm_provider=llm)
+        runner = PipelineRunner(models_dir=ROOT / "models", output_dir=out, llm_provider=llm, overlap_llm=not args.no_overlap)
         stage_timer.reset()
         started = time.perf_counter()
         clips = runner.process_video(Path(args.video).expanduser(), settings)
@@ -63,7 +87,7 @@ def main() -> None:
             print(f"{name:<52}{row['sec']:>10.2f}{row['calls']:>9}{row['sec_per_clip']:>12.2f}")
         if args.json:
             Path(args.json).write_text(json.dumps({"clips": len(clips), "total_sec": round(total, 1), "stages": rows}, ensure_ascii=False, indent=2))
-        if llm is not None:
+        if hasattr(llm, "release"):
             llm.release()
 
     if args.keep:

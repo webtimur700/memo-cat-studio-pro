@@ -97,13 +97,13 @@ def test_without_effects_there_is_no_extra_pass_and_with_effects_subtitles_move_
 
     monkeypatch.setattr(export_service, "apply_effects_to_video", forbidden)
     ExportService().export_clip(_plan(colorful_video, tmp_path / "a.mp4", tmp_path))
-    assert len(commands) == 3 and "ass=subs.ass" in commands[0]                  # как раньше: база с субтитрами, ролик оверлеев, склейка
+    assert len(commands) == 1 and "ass=subs.ass" in commands[0] and "overlay=" in commands[0]   # один проход: кроп, субтитры, оверлеи, кодирование
 
     monkeypatch.undo()
     commands.clear()
     monkeypatch.setattr(export_service, "_run", lambda cmd, cwd=None: (commands.append(" ".join(cmd)), real_run(cmd, cwd))[1])
     ExportService().export_clip(_plan(colorful_video, tmp_path / "b.mp4", tmp_path, effects=[("vintage_sepia", _sepia())]))
-    assert "ass=" not in commands[0] and "ass=subs.ass" in commands[-1]           # текст не тонируется, вжигается после эффекта
+    assert len(commands) == 2 and "ass=" not in commands[0] and "ass=subs.ass" in commands[-1]   # текст не тонируется, вжигается после эффекта
 
 
 def test_effects_run_in_the_selected_order_and_a_broken_effect_is_skipped(colorful_video, tmp_path):

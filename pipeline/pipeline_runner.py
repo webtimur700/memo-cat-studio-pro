@@ -19,6 +19,9 @@ faster-whisper) могут быть не скачаны, LM Studio может б
 from __future__ import annotations
 
 import json
+import threading
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
@@ -57,6 +60,7 @@ from video.scene_detector import SceneDetector
 from vision.smart_crop import CropWindow, SmartCropPlanner
 from vision.mediapipe_face import AnimalHeadRegionEstimator
 from vision.motion_events import analyze_window_motion
+from vision.parallel_detect import detected_stream
 from vision.tracker import ObjectTracker
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -126,6 +130,25 @@ class _DetectorHandle:
         return self.detector.detect(frame)  # type: ignore[attr-defined]
 
 
+@dataclass
+class _PendingClip:
+    """Клип, у которого готово видео, но ещё ждут тексты LLM: обложка и метаданные пишутся в _finalize_clip."""
+
+    moment: Moment
+    video_path: Path
+    output_path: Path
+    crop_samples: list[CropSample]
+    transcript: str
+    original_transcript: str
+    language: str | None
+    subtitle_files: dict[str, Path]
+    music_file: str | None
+    music_mix: dict | None
+    effects: tuple
+    cover_frame: tuple[float, np.ndarray] | None
+    content_future: Future
+
+
 class PipelineRunner:
     def __init__(
         self,
@@ -135,18 +158,23 @@ class PipelineRunner:
         assets_dir: Path | None = None,
         shared_models: SharedModels | None = None,
         plugin_registry=None,
+        overlap_llm: bool = True,
     ) -> None:
         # assets/logo/logo.png (если положили) подхватывается вместо логотипа по умолчанию
         self._assets_dir = assets_dir or PROJECT_ROOT / "assets"
         self._models_dir = models_dir or Path("models")
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
+        self._overlap_llm = overlap_llm   # тексты клипа считаются в фоне, пока кодируются следующие (False — по очереди, для замеров)
         self._plugins = plugin_registry   # PluginRegistry с эффектами (None — плагинов нет)
         # YOLO и Whisper: если раннер создан очередью — модели общие на все видео, иначе свои на этот раннер
         self._shared = shared_models or SharedModels(self._models_dir)
         self._llm_unavailable = False  # после первой недоступности LLM не долбимся в неё до конца видео
         self._llm_issue: LLMIssue | None = None   # почему LLM не сработала (для всех клипов этого видео)
         self._emit: Callable[..., None] = lambda stage, **data: None
+        self._llm_pool: ThreadPoolExecutor | None = None   # фоновый поток LLM-текстов (только внутри process_video)
+        self._llm_lock = threading.Lock()   # один запрос к LLM за раз: и тексты клипа, и перевод субтитров
+        self._cover_candidate: tuple | None = None   # самый резкий кадр последнего момента: (видео, начало, конец, время, кадр)
         # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
         # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
         self._word_cache: list[tuple[float, float, list[WordTiming], str | None]] = []
@@ -167,18 +195,27 @@ class PipelineRunner:
         self._emit = emit
         self._word_cache = []
         emit("analyzing")
-        with stage("1 анализ: ingest + сцены"):
+        with stage("1 анализ: ingest"):
             source = IngestionService().ingest(video_path)
             detector = _DetectorHandle(detector=self._shared.detector())
-            scenes = self._detect_scenes_safely(video_path)
 
-        emit("scoring")
-        with stage("2a скоринг: звуковые события (YAMNet)"):
-            audio_events = self._analyze_audio_events(video_path)
-        with stage("2b скоринг: сканирование окон (YOLO)"):
-            window_scores = self._scan_windows(
-                video_path, source.duration_sec, detector, scenes, audio_events, settings.viral_score
-            )
+        # детекция сцен читает всё видео целиком одним потоком и не зависит от YOLO — идёт параллельно со сканированием
+        # окон; число смен сцены в окне (влияет на оценку) достраивается, когда обе части готовы
+        scene_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scenes")
+        scenes_future = scene_pool.submit(self._timed_scene_detection, video_path)
+        try:
+            emit("scoring")
+            with stage("2a скоринг: звуковые события (YAMNet)"):
+                audio_events = self._analyze_audio_events(video_path)
+            with stage("2b скоринг: сканирование окон (YOLO)"):
+                window_scores = self._scan_windows(
+                    video_path, source.duration_sec, detector, [], audio_events, settings.viral_score
+                )
+            with stage("1b анализ: ожидание детекции сцен"):
+                scenes = scenes_future.result()
+        finally:
+            scene_pool.shutdown(wait=True)
+        window_scores = self._apply_scene_changes(window_scores, scenes, settings.viral_score)
         with stage("2c скоринг: прыжки/падения (поза)"):
             window_scores = self._add_motion_events(video_path, window_scores, detector, scenes, settings.viral_score)
 
@@ -203,11 +240,25 @@ class PipelineRunner:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
         clips: list[Clip] = []
-        for index, moment in enumerate(moments):
-            emit("reframing", moment_index=index, total=len(moments))
-            clip = self._export_moment(video_path, source, moment, index, detector, settings)
-            if clip is not None:
-                clips.append(clip)
+        # тексты LLM (~25 с на клип) считаются в фоне, пока следующие клипы кадрируются и кодируются; вызовы LLM идут
+        # строго по одному (в LM Studio загружена одна модель с фиксированным контекстом: параллельные запросы памяти не
+        # добавляют, но и не ускоряют), поэтому лимит памяти под пайплайн остаётся прежним
+        self._llm_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llm") if self._overlap_llm else None
+        pending: deque[_PendingClip] = deque()
+        try:
+            for index, moment in enumerate(moments):
+                emit("reframing", moment_index=index, total=len(moments))
+                item = self._export_moment(video_path, source, moment, index, detector, settings)
+                if item is not None:
+                    pending.append(item)
+                while pending and pending[0].content_future.done():   # готовые тексты — сразу в дело
+                    clips.append(self._finalize_clip(pending.popleft(), settings))
+            while pending:
+                clips.append(self._finalize_clip(pending.popleft(), settings))
+        finally:
+            if self._llm_pool is not None:
+                self._llm_pool.shutdown(wait=True, cancel_futures=True)
+            self._llm_pool = None
 
         emit("done", moments_found=len(clips))
         return clips
@@ -261,6 +312,26 @@ class PipelineRunner:
         logger.info("Прыжки/падения: проверено {} окон, события найдены в {}", len(candidates), found)
         return result
 
+    def _timed_scene_detection(self, video_path: Path) -> list[SceneSegment]:
+        with stage("1a анализ: сцены (параллельно со скорингом)"):
+            return self._detect_scenes_safely(video_path)
+
+    @staticmethod
+    def _apply_scene_changes(
+        windows: list[WindowScore], scenes: list[SceneSegment], weights: ViralScoreSettings
+    ) -> list[WindowScore]:
+        """Дописывает число смен сцены в окна, оценённые без сцен (см. process_video), и пересчитывает Viral Score."""
+        result = []
+        for window in windows:
+            count = sum(1 for s in scenes if window.start_sec < s.start_sec < window.end_sec)
+            if window.inputs is None or count == window.inputs.scene_change_count:
+                result.append(window)
+                continue
+            inputs = replace(window.inputs, scene_change_count=count)
+            breakdown = compute_score_breakdown(inputs, weights)
+            result.append(replace(window, inputs=inputs, breakdown=breakdown, viral_score=breakdown.score))
+        return result
+
     def _detect_scenes_safely(self, video_path: Path) -> list[SceneSegment]:
         try:
             return SceneDetector().detect(video_path)
@@ -280,7 +351,11 @@ class PipelineRunner:
         results: list[WindowScore] = []
         default_weights = weights or ViralScoreSettings()
 
-        with FrameExtractor(video_path) as extractor:
+        with FrameExtractor(video_path) as extractor, detected_stream(
+            detector.detector, extractor.frames_in_range(0.0, duration_sec, sample_fps=SAMPLE_FPS_SCAN)
+        ) as stream:
+            # кадры всего видео идут одним потоком (декодирование подряд + YOLO в потоках), окна режут его по времени
+            pending = next(stream, None)
             window_start = 0.0
             while window_start < duration_sec:
                 window_end = min(window_start + WINDOW_SEC, duration_sec)
@@ -293,9 +368,9 @@ class PipelineRunner:
                 frames_with_detection = 0
                 total_frames = 0
 
-                for _timestamp, frame in extractor.frames_in_range(
-                    window_start, window_end, sample_fps=SAMPLE_FPS_SCAN
-                ):
+                while pending is not None and pending[0] < window_end - 1e-6:
+                    _timestamp, frame, frame_detections = pending
+                    pending = next(stream, None)
                     total_frames += 1
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     if prev_gray is not None:
@@ -304,10 +379,10 @@ class PipelineRunner:
 
                     if detector.available:
                         # присутствие в кадре считаем только по животным: человек не делает момент "вирусным"
-                        frame_detections = [d for d in detector.detect(frame) if is_animal_class(d.class_id)]
-                        if frame_detections:
+                        animals = [d for d in frame_detections if is_animal_class(d.class_id)]
+                        if animals:
                             frames_with_detection += 1
-                            detections_in_window.extend(frame_detections)
+                            detections_in_window.extend(animals)
 
                 motion_intensity = sum(motion_samples) / len(motion_samples) if motion_samples else 0.0
                 # Честный fallback: без YOLO детекции "присутствия животного" не
@@ -351,7 +426,7 @@ class PipelineRunner:
         index: int,
         detector: _DetectorHandle,
         settings: UserSettings,
-    ) -> Clip | None:
+    ) -> "_PendingClip | None":
         with stage("4a клип: кроп-трекинг (YOLO)"):
             crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
         with stage("4b клип: транскрипция (Whisper)"):
@@ -389,11 +464,17 @@ class PipelineRunner:
             source_start_sec=moment.start_sec,
         )
 
+        # обложка и тексты нужны только после кодирования, но зависят лишь от расшифровки и кадра: запускаем LLM до экспорта
+        transcript = " ".join(w.text for w in words)
+        cover_frame = self._pick_cover_frame(video_path, moment)
+        content_future = self._submit_llm(self._timed_generate_content, transcript, cover_frame)
+
         try:
             with stage("5 экспорт (всего)"):
                 ExportService().export_clip(plan)
         except Exception as exc:
             logger.error("Экспорт момента {} из {} не удался: {}", index + 1, video_path.name, exc)
+            content_future.cancel()
             for path in subtitle_files.values():   # клипа нет — файлы субтитров без него не нужны
                 path.unlink(missing_ok=True)
             return None
@@ -403,23 +484,47 @@ class PipelineRunner:
 
         with stage("6 музыка"):
             music_file, music_mix = self._add_music(output_path, speech_words, settings)
-        transcript = " ".join(w.text for w in words)
-        with stage("7a кадр обложки"):
-            cover_frame = self._pick_cover_frame(video_path, moment)
-        with stage("7b LLM: заголовки/описание/хештеги"):
-            content = self._generate_content(transcript, cover_frame)
+
+        return _PendingClip(
+            moment=moment, video_path=video_path, output_path=output_path, crop_samples=crop_samples,
+            transcript=transcript, original_transcript=original_transcript, language=self.last_moment_language,
+            subtitle_files=subtitle_files, music_file=music_file, music_mix=music_mix, effects=effects,
+            cover_frame=cover_frame, content_future=content_future,
+        )
+
+    def _submit_llm(self, function, *args) -> Future:
+        """Задача для LLM в фоновом потоке (вне process_video — выполняется сразу, в текущем потоке)."""
+        if self._llm_pool is not None:
+            return self._llm_pool.submit(function, *args)
+        future: Future = Future()
+        try:
+            future.set_result(function(*args))
+        except BaseException as exc:
+            future.set_exception(exc)
+        return future
+
+    def _timed_generate_content(self, transcript: str, cover_frame) -> ClipContent:
+        with stage("7b LLM: заголовки/описание/хештеги (в фоне)"):
+            return self._generate_content(transcript, cover_frame)
+
+    def _finalize_clip(self, pending: "_PendingClip", settings: UserSettings) -> Clip:
+        """Клип после кодирования: ждёт тексты LLM, рисует обложку с заголовком, пишет метаданные."""
+        moment, output_path = pending.moment, pending.output_path
+        with stage("7c ожидание LLM (не покрытое работой над другими клипами)"):
+            content = pending.content_future.result()
         llm_issue = self._clip_llm_issue(content)
         title = content.titles[0] if content.titles else self._default_title(moment)
-        cover_path = self._generate_cover(cover_frame, moment, crop_samples, title, output_path, settings)
-        metadata_path = self._write_metadata(
-            output_path, video_path, moment, transcript, title, content, cover_path,
-            transcript_original=original_transcript, language=self.last_moment_language,
-            subtitle_files=subtitle_files,
-            music_file=music_file,
-            music_mix=music_mix,
-            llm_issue=llm_issue,
-            effects=effects,
-        )
+        with stage("7d обложка и метаданные"):
+            cover_path = self._generate_cover(pending.cover_frame, moment, pending.crop_samples, title, output_path, settings)
+            metadata_path = self._write_metadata(
+                output_path, pending.video_path, moment, pending.transcript, title, content, cover_path,
+                transcript_original=pending.original_transcript, language=pending.language,
+                subtitle_files=pending.subtitle_files,
+                music_file=pending.music_file,
+                music_mix=pending.music_mix,
+                llm_issue=llm_issue,
+                effects=pending.effects,
+            )
 
         return Clip(
             moment=moment,
@@ -428,10 +533,10 @@ class PipelineRunner:
             description=content.description,
             hashtags=content.hashtags,
             titles=content.titles,
-            transcript=transcript,
+            transcript=pending.transcript,
             metadata_path=metadata_path,
             cover_path=cover_path,
-            subtitle_paths=tuple(subtitle_files.values()),
+            subtitle_paths=tuple(pending.subtitle_files.values()),
             llm_issue=llm_issue,
         )
 
@@ -500,7 +605,8 @@ class PipelineRunner:
         image_jpeg = None
         if cover_frame is not None and getattr(self._llm_provider, "supports_vision", False):
             image_jpeg = frame_to_jpeg(cover_frame[1])
-        content = generate_clip_content(self._llm_provider, transcript, image_jpeg=image_jpeg)
+        with self._llm_lock:
+            content = generate_clip_content(self._llm_provider, transcript, image_jpeg=image_jpeg)
         if content.errors:
             failed_completely = content.is_empty
             issue = (getattr(self._llm_provider, "issue", None) if failed_completely else None) or LLMIssue.from_errors(
@@ -524,7 +630,11 @@ class PipelineRunner:
         return LLMIssue("request_failed", "LLM вернула пустой ответ.", "Проверьте модель в LM Studio и обработайте видео снова.")
 
     def _pick_cover_frame(self, video_path: Path, moment: Moment) -> tuple[float, np.ndarray] | None:
-        """Самый резкий кадр момента (нужен и LLM как картинка, и обложке)."""
+        """Самый резкий кадр момента (нужен и LLM как картинка, и обложке). Обычно он уже выбран при кадрировании
+        (_build_crop_samples смотрит те же кадры), тогда видео повторно не читается."""
+        candidate, self._cover_candidate = self._cover_candidate, None
+        if candidate is not None and candidate[:3] == (video_path, moment.start_sec, moment.end_sec):
+            return candidate[3], candidate[4]
         try:
             with FrameExtractor(video_path) as extractor:
                 return extractor.best_frame_for_cover(moment.start_sec, moment.end_sec)
@@ -644,16 +754,25 @@ class PipelineRunner:
         head_regions: list[BoundingBox | None] = []
         head_estimator = AnimalHeadRegionEstimator()
 
-        with FrameExtractor(video_path) as extractor:
-            for timestamp, frame in extractor.frames_in_range(
-                moment.start_sec, moment.end_sec, sample_fps=SAMPLE_FPS_CROP
-            ):
+        best_sharpness = -1.0
+        self._cover_candidate = None
+        with FrameExtractor(video_path) as extractor, detected_stream(
+            detector.detector if detector.available else None,
+            extractor.frames_in_range(moment.start_sec, moment.end_sec, sample_fps=SAMPLE_FPS_CROP),
+        ) as stream:
+            for timestamp, frame, frame_detections in stream:
                 relative_t = timestamp - moment.start_sec
                 detection = None
                 head_region: BoundingBox | None = None
 
+                # кадры сэмплируются на тех же 2 fps, что ищет best_frame_for_cover: самый резкий выбирается
+                # здесь же, отдельного прохода по видео ради обложки не нужно
+                sharpness = cv2.Laplacian(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var()
+                if sharpness > best_sharpness:
+                    best_sharpness = sharpness
+                    self._cover_candidate = (video_path, moment.start_sec, moment.end_sec, timestamp, frame)
+
                 if detector.available:
-                    frame_detections = detector.detect(frame)
                     retimed = [
                         Detection(d.class_id, d.class_name, d.confidence, d.bbox, relative_t)
                         for d in frame_detections
@@ -784,7 +903,8 @@ class PipelineRunner:
             return words
         from subtitles.translator import translate_words
 
-        translated = translate_words(self._llm_provider, words, target)
+        with self._llm_lock:
+            translated = translate_words(self._llm_provider, words, target)
         return translated if translated else words
 
     def _write_subtitles(

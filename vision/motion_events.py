@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 
 from core.entities.detection import is_animal_class
 from video.frame_extractor import FrameExtractor
+from vision.parallel_detect import detected_stream
 from vision.pose_motion_analyzer import MotionEvent, MotionEventType, PoseMotionAnalyzer
 from vision.tracker import ObjectTracker
 
@@ -67,9 +68,9 @@ def analyze_window_motion(
 ) -> MotionSummary:
     """Плотный трек животного в окне [start, end) и события движения по нему."""
     tracker = ObjectTracker()
-    for timestamp, frame in extractor.dense_frames_in_range(start_sec, end_sec, MOTION_SAMPLE_FPS):
-        animals = [replace(d, frame_timestamp_sec=timestamp) for d in detector.detect(frame) if is_animal_class(d.class_id)]
-        tracker.update(animals)
+    with detected_stream(detector, extractor.dense_frames_in_range(start_sec, end_sec, MOTION_SAMPLE_FPS)) as stream:
+        for timestamp, _frame, detections in stream:
+            tracker.update([replace(d, frame_timestamp_sec=timestamp) for d in detections if is_animal_class(d.class_id)])
     primary = tracker.primary_track()
     if primary is None or len(primary.detections) < 3:
         return MotionSummary()
