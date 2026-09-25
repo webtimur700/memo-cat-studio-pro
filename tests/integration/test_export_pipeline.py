@@ -69,10 +69,54 @@ def test_fps_and_bitrate_settings_reach_the_final_clip(tmp_path: Path):
                     "-f", "lavfi", "-i", "sine=frequency=440:duration=9", "-c:v", "libx264", "-crf", "12", "-c:a", "aac", "-pix_fmt", "yuv420p",
                     "-shortest", str(sample_video)], check=True)
     service = ExportService()
-    low = service.export_clip(_plan(sample_video, tmp_path, "low.mp4", seconds=4, fps=24, bitrate_mbps=1))
-    high = service.export_clip(_plan(sample_video, tmp_path, "high.mp4", seconds=4, fps=30, bitrate_mbps=20))
+    # libx264 держит потолок строго даже на шуме; аппаратный VAAPI на синтетическом шуме его перебирает (см. тест ниже)
+    low = service.export_clip(_plan(sample_video, tmp_path, "low.mp4", seconds=4, fps=24, bitrate_mbps=1, encoder="x264"))
+    high = service.export_clip(_plan(sample_video, tmp_path, "high.mp4", seconds=4, fps=30, bitrate_mbps=20, encoder="x264"))
 
     assert "r_frame_rate=24/1" in _probe(low, "r_frame_rate") and "r_frame_rate=30/1" in _probe(high, "r_frame_rate")
     rate = lambda p: int(next(l for l in _probe(p, "codec_name").splitlines() if l.startswith("bit_rate=")).split("=")[1])
     assert rate(low) < 1_500_000                       # потолок 1 Мбит/с (+ звук) соблюдён
     assert rate(high) > 1.5 * rate(low)                # без потолка тот же кадр весит заметно больше
+
+
+def test_vaapi_encoder_honours_fps_and_bitrate_or_falls_back(tmp_path: Path):
+    """encoder='auto' (аппаратный VAAPI, если работает, иначе libx264): FPS и потолок битрейта доходят до клипа,
+    формат тот же (H.264, 1080x1920, yuv420p, звук AAC)."""
+    import subprocess
+
+    from export.encoder import resolve_encoder
+
+    sample_video = tmp_path / "test.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:duration=9:rate=30",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=9", "-c:v", "libx264", "-crf", "12", "-c:a", "aac", "-pix_fmt", "yuv420p",
+                    "-shortest", str(sample_video)], check=True)
+    service = ExportService()
+    low = service.export_clip(_plan(sample_video, tmp_path, "low.mp4", seconds=4, fps=24, bitrate_mbps=2, encoder="auto"))
+    high = service.export_clip(_plan(sample_video, tmp_path, "high.mp4", seconds=4, fps=30, bitrate_mbps=30, encoder="auto"))
+
+    assert resolve_encoder("auto") in ("vaapi", "x264")
+    assert "r_frame_rate=24/1" in _probe(low, "r_frame_rate") and "r_frame_rate=30/1" in _probe(high, "r_frame_rate")
+    info = _probe(low, "codec_name,pix_fmt,width,height")
+    assert "codec_name=h264" in info and "pix_fmt=yuv420p" in info and "width=1080" in info and "height=1920" in info
+    rate = lambda p: int(next(l for l in _probe(p, "codec_name").splitlines() if l.startswith("bit_rate=")).split("=")[1])
+    assert rate(low) < 2_500_000
+    assert rate(high) > rate(low)
+
+
+def test_export_falls_back_to_x264_when_vaapi_fails(sample_video: Path, tmp_path: Path, monkeypatch):
+    """Аппаратный кодер сорвался на клипе — клип всё равно готов (повтор через libx264)."""
+    import export.export_service as module
+
+    calls = []
+    real_run = module._run
+
+    def flaky_run(command, cwd=None):
+        calls.append("h264_vaapi" in command)
+        if "h264_vaapi" in command:
+            raise module.FFmpegExecutionError(command, 1, "vaapi broke")
+        real_run(command, cwd=cwd)
+
+    monkeypatch.setattr(module, "resolve_encoder", lambda preference: "vaapi")
+    monkeypatch.setattr(module, "_run", flaky_run)
+    result = ExportService().export_clip(_plan(sample_video, tmp_path, "fb.mp4", seconds=3))
+    assert result.exists() and calls == [True, False]

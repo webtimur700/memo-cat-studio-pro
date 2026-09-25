@@ -93,6 +93,8 @@ class ExportSettings:
     height: int = 1920
     quality_preset: str = "high"
     bitrate_mbps: int = 12
+    encoder: str = "auto"
+    """Видеокодер: 'auto' (аппаратный VAAPI, если реально работает, иначе libx264), 'vaapi' или 'x264'."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +272,7 @@ class UserSettings:
                 height=export_raw.get("resolution", [1080, 1920])[1],
                 quality_preset=export_raw.get("quality_preset", "high"),
                 bitrate_mbps=export_raw.get("bitrate_mbps", 12),
+                encoder=export_raw.get("encoder", "auto"),
             ),
             safe_zone=SafeZoneSettings(
                 top_px=safe_raw.get("top_px", 250),

@@ -1,27 +1,18 @@
 """Финальная сборка одного Shorts-ролика (Функция 15: экспорт MP4 H264/AAC
 30fps 1080x1920) — объединяет результаты предыдущих Шагов в один вызов
 FFmpeg с filter_complex: динамический crop (Шаг 10), burned ASS-субтитры
-(Шаг 7), overlay анимированной плашки как отдельного видео с альфа-каналом
-(Шаг 9).
+(Шаг 7), анимированные оверлеи (плашка, логотип, Subscribe; Шаги 9, 13, 14).
 
-Оверлей плашки рендерится заранее в отдельный MOV с альфа-каналом (QuickTime
-Animation / qtrle) через render_banner_overlay_clip() — рендерить анимацию
-покадрово внутри одного gigantic filter_complex было бы на порядок сложнее
-и хрупче, чем скомпоновать готовый прозрачный ролик и наложить его один раз
-через `overlay`.
+Оверлеи рендерятся заранее покадровыми слоями rawvideo RGBA (effects/overlay_layers.py) и
+накладываются `overlay` в том же проходе, где видео кодируется, — один проход кодирования
+вместо прежних двух и без промежуточного ролика с альфа-каналом. Историческая справка: раньше
+это был QuickTime Animation (qtrle) в MOV, потому что libvpx-vp9 в этой сборке ffmpeg молча теряет
+альфа-канал (заявленная в `-h` поддержка yuva420p не гарантирует, что она работает — проверять
+надо декодированием результата). qtrle-ролик сохранён в прошлом: rawvideo альфу не сжимает вовсе.
 
-ЧЕСТНОЕ ПРИМЕЧАНИЕ (реальная проблема, пойманная тестом на этом шаге):
-изначально для промежуточного прозрачного ролика использовался WebM/VP9
-(`-pix_fmt yuva420p`) — стандартный с виду выбор для "видео с альфа-каналом".
-На практике в этой сборке ffmpeg (и, вероятно, во многих других без
-специальных патчей) libvpx-vp9 заявляет поддержку yuva420p в `-h
-encoder=libvpx-vp9`, но реально MOLча теряет альфа-канал при кодировании —
-задокументированная в `-h` поддержка формата не гарантирует, что она
-реально работает в контейнере, это стоит перепроверять декодированием
-результата обратно, а не только чтением списка поддерживаемых pix_fmt.
-QuickTime Animation (`qtrle`) в MOV — старый, но надёжно сохраняет альфа-канал
-и на этом ffmpeg подтверждён реальным round-trip тестом (кодирование ->
-декодирование -> проверка альфа-пикселей).
+Кодер — аппаратный h264_vaapi, если он реально работает, иначе libx264 (export/encoder.py).
+Эффекты плагинов требуют покадровой обработки OpenCV, поэтому с ними проход разделён на два:
+база (кроп + масштаб) -> эффекты -> субтитры и оверлеи с финальным кодированием.
 """
 
 from __future__ import annotations
@@ -33,14 +24,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
-from PIL import Image
-
-from animation.promo_banner_animator import compute_banner_animation_state, render_banner_on_frame
 from core.exceptions import FFmpegExecutionError
+from core.stage_timer import stage
 from core.entities.settings import ExportSettings
 from export.frame_effects import apply_effects_to_video
 from effects.branding_overlay import BrandingOverlay
 from export.dynamic_crop import CropSample, build_dynamic_crop_filter
+from effects.overlay_layers import OverlayLayer, render_overlay_layers
+from export.encoder import build_encoder_args, resolve_encoder
 from export.quality_presets import resolve_quality_preset
 
 
@@ -48,62 +39,6 @@ def _run(command: list[str], cwd: Path | None = None) -> None:
     result = subprocess.run(command, capture_output=True, text=True, check=False, cwd=cwd)
     if result.returncode != 0:
         raise FFmpegExecutionError(command, result.returncode, result.stderr)
-
-
-def render_banner_overlay_clip(
-    output_path: Path,
-    clip_duration_sec: float,
-    banner_rect: tuple[int, int, int, int] | None,
-    banner_text_lines: list[str],
-    appear_at_sec: float,
-    banner_duration_sec: float,
-    frame_size: tuple[int, int],
-    fps: int = 30,
-    branding: BrandingOverlay | None = None,
-) -> Path:
-    """Рендерит ТОЛЬКО анимированные оверлеи (прозрачный фон) на весь клип: плашку
-    (если задан banner_rect), логотип и кнопку Subscribe (если задан branding) —
-    PNG-последовательность через Pillow, затем кодируется в MOV/qtrle с
-    реально сохранённым альфа-каналом (см. честное примечание в docstring
-    модуля про WebM/VP9). output_path должен иметь расширение .mov.
-    """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    width, height = frame_size
-
-    with tempfile.TemporaryDirectory(prefix="memo_cat_banner_") as tmp_dir:
-        tmp_path = Path(tmp_dir)
-        total_frames = max(1, int(clip_duration_sec * fps))
-
-        transparent_frame = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-
-        for frame_index in range(total_frames):
-            t = frame_index / fps
-            elapsed_since_appear = t - appear_at_sec
-            state = compute_banner_animation_state(elapsed_since_appear, banner_duration_sec)
-
-            if banner_rect is not None and state.visible and state.opacity > 0.01:
-                frame_img = render_banner_on_frame(
-                    transparent_frame, state, banner_rect, banner_text_lines
-                )
-            else:
-                frame_img = transparent_frame
-
-            if branding is not None and not branding.is_empty:
-                canvas = frame_img.copy()  # transparent_frame общий — его нельзя менять на месте
-                if branding.draw_on(canvas, t):
-                    frame_img = canvas
-
-            frame_img.save(tmp_path / f"frame_{frame_index:06d}.png", compress_level=1)
-
-        _run([
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-framerate", str(fps),
-            "-i", str(tmp_path / "frame_%06d.png"),
-            "-c:v", "qtrle",
-            str(output_path),
-        ])
-
-    return output_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,13 +67,32 @@ class ExportPlan:
     все клипы падали на экспорте / брали не тот участок видео)."""
 
 
-def _video_quality_args(settings: ExportSettings, quality) -> list[str]:
-    """Кодирование видео по настройкам: CRF и пресет задают качество, maxrate/bufsize — потолок битрейта.
-    Применяется к обоим проходам: финальный клип получается во втором (наложение плашки/логотипа)."""
+def _x264_args(settings: ExportSettings, quality) -> list[str]:
+    """Параметры libx264 (CRF/пресет задают качество, maxrate/bufsize — потолок битрейта): проход с эффектами плагинов."""
+    return build_encoder_args("x264", settings, quality).codec_args
+
+
+def _layer_input_args(layer: OverlayLayer, fps: int) -> list[str]:
+    """Слой rawvideo RGBA как вход ffmpeg: начинается со своего кадра (-itsoffset), после последнего кадра исчезает."""
     return [
-        "-c:v", "libx264", "-preset", quality.x264_preset, "-crf", str(quality.crf),
-        "-maxrate", f"{settings.bitrate_mbps}M", "-bufsize", f"{2 * settings.bitrate_mbps}M",
+        "-itsoffset", f"{layer.start_frame / fps:.6f}",
+        "-f", "rawvideo", "-pix_fmt", "rgba", "-video_size", f"{layer.width}x{layer.height}", "-framerate", str(fps),
+        "-i", str(layer.path),
     ]
+
+
+def _overlay_graph(head_chain: str, layers: list[OverlayLayer], first_layer_input: int, suffix: str) -> tuple[str, str]:
+    """filter_complex: [0:v]head_chain[v0], затем наложение слоёв по порядку, затем suffix. Возвращает (граф, метка результата)."""
+    parts = [f"[0:v]{head_chain or 'null'}[v0]"]
+    for i, layer in enumerate(layers):
+        parts.append(
+            f"[v{i}][{first_layer_input + i}:v]overlay={layer.x}:{layer.y}:eof_action=pass:format=auto[v{i + 1}]"
+        )
+    label = f"v{len(layers)}"
+    if suffix:
+        parts.append(f"[{label}]{suffix}[vout]")
+        label = "vout"
+    return ";".join(parts), label
 
 
 class ExportService:
@@ -147,12 +101,21 @@ class ExportService:
             raise FFmpegExecutionError(["ffmpeg"], -1, "ffmpeg не найден в PATH")
 
     def export_clip(self, plan: ExportPlan) -> Path:
+        encoder = resolve_encoder(plan.settings.encoder)
+        try:
+            return self._export(plan, encoder)
+        except FFmpegExecutionError as exc:
+            if encoder != "vaapi":
+                raise
+            # аппаратный кодер может сорваться на конкретном клипе (занят GPU, нехватка памяти): клип важнее скорости
+            logger.warning("VAAPI не справился с {} ({}) — повторяю через libx264", plan.output_path.name, str(exc)[:200])
+            return self._export(plan, "x264")
+
+    def _export(self, plan: ExportPlan, encoder: str) -> Path:
         quality = resolve_quality_preset(plan.settings.quality_preset)
         plan.output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        crop_filter = build_dynamic_crop_filter(plan.crop_samples)
-        scale_filter = f"scale={plan.settings.width}:{plan.settings.height}"
-        video_filters = [crop_filter, scale_filter]
+        enc = build_encoder_args(encoder, plan.settings, quality)
+        fps = plan.settings.fps
 
         # ffmpeg-фильтрграф — своя мини-грамматика (двоеточия, запятые,
         # квадратные скобки — служебные символы), и экранирование пути внутри
@@ -161,80 +124,80 @@ class ExportService:
         # не класть его в строку фильтра: запускаем ffmpeg с cwd=папка ass-
         # файла и передаём в фильтр только голое имя файла, без единого
         # спецсимвола пути.
-        ass_cwd: Path | None = None
+        ass_cwd = plan.subtitle_ass_path.parent if plan.subtitle_ass_path is not None else None
+        ass_filter = f"ass={plan.subtitle_ass_path.name}" if plan.subtitle_ass_path is not None else ""
         # с эффектами субтитры вжигаются позже (после эффекта, вместе с оверлеями), иначе эффект тонировал бы и текст
         defer_subtitles = bool(plan.effects) and plan.subtitle_ass_path is not None
-        if plan.subtitle_ass_path is not None:
-            ass_cwd = plan.subtitle_ass_path.parent
-            if not defer_subtitles:
-                video_filters.append(f"ass={plan.subtitle_ass_path.name}")
 
-        filter_chain = ",".join(video_filters)
+        # fps первым: лишние кадры источника (60 fps) отбрасываются до дорогих crop/scale/ass
+        head = [f"fps={fps}", build_dynamic_crop_filter(plan.crop_samples), f"scale={plan.settings.width}:{plan.settings.height}"]
+        if ass_filter and not defer_subtitles:
+            head.append(ass_filter)
+        head_chain = ",".join(head)
+        clip_duration = plan.crop_samples[-1].timestamp_sec
+        has_overlays = plan.banner_rect is not None or (plan.branding is not None and not plan.branding.is_empty)
 
         with tempfile.TemporaryDirectory(prefix="memo_cat_export_") as tmp_dir:
-            base_output = Path(tmp_dir) / "base.mp4"
-            clip_duration = plan.crop_samples[-1].timestamp_sec
+            tmp = Path(tmp_dir)
+            layers: list[OverlayLayer] = []
+            if has_overlays:
+                with stage("5b экспорт: рендер слоёв overlay"):
+                    layers = render_overlay_layers(
+                        tmp / "layers",
+                        clip_duration_sec=clip_duration,
+                        frame_size=(plan.settings.width, plan.settings.height),
+                        fps=fps,
+                        banner_rect=plan.banner_rect,
+                        banner_text_lines=plan.banner_text_lines,
+                        appear_at_sec=plan.banner_appear_at_sec,
+                        banner_duration_sec=plan.banner_duration_sec,
+                        branding=plan.branding,
+                    )
 
-            base_cmd = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-ss", f"{plan.source_start_sec:.3f}",
-                "-i", str(plan.source_path.resolve()),
-                "-t", f"{clip_duration:.3f}",
-                "-vf", filter_chain,
-                "-r", str(plan.settings.fps),
-                *_video_quality_args(plan.settings, quality),
-                "-c:a", plan.settings.codec_audio,
-                "-b:a", f"{quality.audio_bitrate_kbps}k",
-                "-movflags", "+faststart",
-                str(base_output.resolve()),
-            ]
-            logger.info("Экспорт клипа (база: crop+scale+субтитры): {}", plan.output_path.name)
-            logger.debug("ffmpeg filter_chain: {}", filter_chain)
-            _run(base_cmd, cwd=ass_cwd)
-
-            if plan.effects:
-                fx_output = Path(tmp_dir) / "fx.mp4"
-                logger.info("Эффекты плагинов ({}) для клипа {}", ", ".join(n for n, _ in plan.effects), plan.output_path.name)
-                apply_effects_to_video(base_output, fx_output, plan.effects, plan.settings.fps, _video_quality_args(plan.settings, quality))
-                base_output = fx_output
-
-            has_branding = plan.branding is not None and not plan.branding.is_empty
-            if plan.banner_rect is None and not has_branding and not defer_subtitles:
-                shutil.copy(base_output, plan.output_path)
+            if not plan.effects:
+                graph, label = _overlay_graph(head_chain, layers, 1, enc.filter_suffix)
+                command = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *enc.global_args,
+                    "-ss", f"{plan.source_start_sec:.3f}", "-t", f"{clip_duration:.3f}", "-i", str(plan.source_path.resolve()),
+                    *[a for layer in layers for a in _layer_input_args(layer, fps)],
+                    "-filter_complex", graph, "-map", f"[{label}]", "-map", "0:a:0?",
+                    "-t", f"{clip_duration:.3f}", "-r", str(fps),
+                    *enc.codec_args, "-c:a", plan.settings.codec_audio, "-b:a", f"{quality.audio_bitrate_kbps}k",
+                    "-movflags", "+faststart", str(plan.output_path.resolve()),
+                ]
+                logger.info("Экспорт клипа ({}; слоёв overlay: {}): {}", encoder, len(layers), plan.output_path.name)
+                logger.debug("ffmpeg filter_complex: {}", graph)
+                with stage("5a экспорт: кроп+scale+субтитры+overlay+кодирование"):
+                    _run(command, cwd=ass_cwd)
                 return plan.output_path
 
-            overlay_inputs: list[str] = []
-            if plan.banner_rect is not None or has_branding:
-                banner_overlay_path = Path(tmp_dir) / "banner_overlay.mov"
-                render_banner_overlay_clip(
-                    banner_overlay_path,
-                    clip_duration_sec=clip_duration,
-                    banner_rect=plan.banner_rect,
-                    banner_text_lines=plan.banner_text_lines,
-                    appear_at_sec=plan.banner_appear_at_sec,
-                    banner_duration_sec=plan.banner_duration_sec,
-                    frame_size=(plan.settings.width, plan.settings.height),
-                    fps=plan.settings.fps,
-                    branding=plan.branding,
-                )
-                overlay_inputs = ["-i", str(banner_overlay_path)]
-
-            logger.info("Наложение субтитров/оверлеев (плашка/логотип/Subscribe) на клип: {}", plan.output_path.name)
-            if defer_subtitles and overlay_inputs:
-                graph = f"[0:v]ass={plan.subtitle_ass_path.name}[subbed];[subbed][1:v]overlay=0:0:format=auto"
-            elif defer_subtitles:
-                graph = f"[0:v]ass={plan.subtitle_ass_path.name}"
-            else:
-                graph = "[0:v][1:v]overlay=0:0:format=auto"
-            overlay_cmd = [
+            # --- с эффектами плагинов: база -> эффекты (OpenCV) -> субтитры и оверлеи ---
+            base_output = tmp / "base.mp4"
+            x264 = build_encoder_args("x264", plan.settings, quality)
+            base_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", str(base_output.resolve()), *overlay_inputs,
-                "-filter_complex", graph,
-                "-r", str(plan.settings.fps), "-pix_fmt", "yuv420p",
-                *_video_quality_args(plan.settings, quality),
-                "-c:a", "copy", "-movflags", "+faststart",
-                str(plan.output_path.resolve()),
+                "-ss", f"{plan.source_start_sec:.3f}", "-t", f"{clip_duration:.3f}", "-i", str(plan.source_path.resolve()),
+                "-vf", head_chain, "-r", str(fps), *x264.codec_args,
+                "-c:a", plan.settings.codec_audio, "-b:a", f"{quality.audio_bitrate_kbps}k",
+                "-movflags", "+faststart", str(base_output.resolve()),
             ]
-            _run(overlay_cmd, cwd=ass_cwd if defer_subtitles else None)
+            logger.info("Экспорт клипа (база для эффектов): {}", plan.output_path.name)
+            with stage("5a экспорт: база для эффектов"):
+                _run(base_cmd, cwd=ass_cwd)
 
+            fx_output = tmp / "fx.mp4"
+            logger.info("Эффекты плагинов ({}) для клипа {}", ", ".join(n for n, _ in plan.effects), plan.output_path.name)
+            with stage("5d экспорт: эффекты плагинов"):
+                apply_effects_to_video(base_output, fx_output, plan.effects, fps, x264.codec_args)
+
+            graph, label = _overlay_graph(ass_filter if defer_subtitles else "", layers, 1, enc.filter_suffix)
+            final_cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *enc.global_args,
+                "-i", str(fx_output.resolve()), *[a for layer in layers for a in _layer_input_args(layer, fps)],
+                "-filter_complex", graph, "-map", f"[{label}]", "-map", "0:a:0?",
+                "-r", str(fps), *enc.codec_args, "-c:a", "copy", "-movflags", "+faststart", str(plan.output_path.resolve()),
+            ]
+            logger.info("Наложение субтитров/оверлеев на клип с эффектами: {}", plan.output_path.name)
+            with stage("5c экспорт: субтитры+overlay+кодирование"):
+                _run(final_cmd, cwd=ass_cwd if defer_subtitles else None)
         return plan.output_path

@@ -42,6 +42,7 @@ WEIGHT_FIELDS = [
 ]
 QUALITY_PRESETS = ["low", "medium", "high"]
 FPS_CHOICES = [24, 25, 30, 50, 60]
+ENCODER_LABELS = {"auto": "Авто (VAAPI, если работает)", "vaapi": "VAAPI (видеокарта)", "x264": "libx264 (процессор)"}
 
 
 class SettingsView(QWidget):
@@ -271,6 +272,18 @@ class SettingsView(QWidget):
         self._bitrate_spin.valueChanged.connect(self._on_field_changed)
         form.addRow(QLabel("Битрейт видео (максимум)"), self._bitrate_spin)
 
+        self._encoder_combo = QComboBox()
+        for value, label in ENCODER_LABELS.items():
+            self._encoder_combo.addItem(label, value)
+        index = self._encoder_combo.findData(initial_settings.export.encoder)
+        self._encoder_combo.setCurrentIndex(max(0, index))
+        self._encoder_combo.setToolTip(
+            "Аппаратное кодирование (VAAPI на Radeon) втрое-вчетверо быстрее, файл при том же качестве немного больше. "
+            "Нужен mesa-va-drivers-freeworld (ставится scripts/setup.sh); если не работает — автоматически libx264."
+        )
+        self._encoder_combo.currentIndexChanged.connect(self._on_field_changed)
+        form.addRow(QLabel("Видеокодер"), self._encoder_combo)
+
         # --- Обновления: только по кнопке ---
         self.update_panel = UpdatePanel(Path(__file__).resolve().parents[2])
         form.addRow(QLabel("Обновления"), self.update_panel)
@@ -322,7 +335,7 @@ class SettingsView(QWidget):
         )
         updated = updated.with_field(
             "export", quality_preset=self._quality_combo.currentText(), fps=int(self._fps_combo.currentText()),
-            bitrate_mbps=self._bitrate_spin.value(),
+            bitrate_mbps=self._bitrate_spin.value(), encoder=self._encoder_combo.currentData(),
         )
         updated = updated.with_field(
             "safe_zone", **{name: spin.value() for name, spin in self._safe_zone_spins.items()}

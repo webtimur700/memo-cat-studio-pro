@@ -243,6 +243,7 @@ def test_settings_survive_restart_and_history_is_visible(window, tmp_path, monke
     view = window.settings_view
     view._fps_combo.setCurrentText("24")
     view._bitrate_spin.setValue(8)
+    view._encoder_combo.setCurrentIndex(view._encoder_combo.findData("x264"))
     view._reserve_spin.setValue(4.5)
     view._music_offset_slider.setValue(-18)
     view._concurrent_spin.setValue(2)
@@ -272,6 +273,7 @@ def test_settings_survive_restart_and_history_is_visible(window, tmp_path, monke
         assert reopened._settings.export.fps == 24 and reopened._settings.export.bitrate_mbps == 8
         assert reopened._settings.llm.pipeline_reserve_gb == 4.5 and reopened._settings.audio.music_offset_db == -18.0
         assert reopened._settings.batch.max_concurrent_videos == 2
+        assert reopened._settings.export.encoder == "x264" and reopened.settings_view._encoder_combo.currentData() == "x264"
         assert reopened.settings_view._fps_combo.currentText() == "24" and reopened.settings_view._bitrate_spin.value() == 8
         assert reopened.settings_view._reserve_spin.value() == 4.5 and reopened.settings_view._music_offset_slider.value() == -18
         texts = reopened.project_view.project_texts()

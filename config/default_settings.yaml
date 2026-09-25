@@ -95,6 +95,7 @@ export:
   resolution: [1080, 1920]
   quality_preset: high   # low | medium | high — детали в export/quality_presets.py
   bitrate_mbps: 12
+  encoder: auto          # auto (аппаратный VAAPI, если работает) | vaapi | x264
 
 batch:
   max_concurrent_videos: 1     # сколько видео обрабатывается одновременно; остальные ждут в очереди (длина очереди не ограничена)

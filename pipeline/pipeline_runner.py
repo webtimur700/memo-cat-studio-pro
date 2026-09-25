@@ -36,6 +36,7 @@ from core.entities.moment import Moment
 from core.entities.scene_segment import SceneSegment
 from core.entities.settings import UserSettings, ViralScoreSettings
 from core.exceptions import MemoCatError
+from core.stage_timer import stage
 from core.entities.subtitle import WordTiming
 from cutting.clip_selector_service import WindowScore, select_moments
 from effects.branding_overlay import BrandingOverlay, resolve_logo_path
@@ -166,28 +167,33 @@ class PipelineRunner:
         self._emit = emit
         self._word_cache = []
         emit("analyzing")
-        source = IngestionService().ingest(video_path)
-        detector = _DetectorHandle(detector=self._shared.detector())
-        scenes = self._detect_scenes_safely(video_path)
+        with stage("1 анализ: ingest + сцены"):
+            source = IngestionService().ingest(video_path)
+            detector = _DetectorHandle(detector=self._shared.detector())
+            scenes = self._detect_scenes_safely(video_path)
 
         emit("scoring")
-        audio_events = self._analyze_audio_events(video_path)
-        window_scores = self._scan_windows(
-            video_path, source.duration_sec, detector, scenes, audio_events, settings.viral_score
-        )
-        window_scores = self._add_motion_events(video_path, window_scores, detector, scenes, settings.viral_score)
+        with stage("2a скоринг: звуковые события (YAMNet)"):
+            audio_events = self._analyze_audio_events(video_path)
+        with stage("2b скоринг: сканирование окон (YOLO)"):
+            window_scores = self._scan_windows(
+                video_path, source.duration_sec, detector, scenes, audio_events, settings.viral_score
+            )
+        with stage("2c скоринг: прыжки/падения (поза)"):
+            window_scores = self._add_motion_events(video_path, window_scores, detector, scenes, settings.viral_score)
 
         emit("cutting")
         scene_boundaries = sorted(
             {s.start_sec for s in scenes if s.start_sec > 0} | {s.end_sec for s in scenes if s.end_sec < source.duration_sec}
         )
-        moments = select_moments(
-            window_scores,
-            settings,
-            source.duration_sec,
-            scene_boundaries=scene_boundaries,
-            pause_finder=lambda lo, hi: self._find_speech_pauses(video_path, lo, hi, settings),
-        )
+        with stage("3 отбор моментов (вкл. Whisper для пауз)"):
+            moments = select_moments(
+                window_scores,
+                settings,
+                source.duration_sec,
+                scene_boundaries=scene_boundaries,
+                pause_finder=lambda lo, hi: self._find_speech_pauses(video_path, lo, hi, settings),
+            )
         emit("cutting", moments_found=len(moments))
 
         if not moments:
@@ -346,11 +352,14 @@ class PipelineRunner:
         detector: _DetectorHandle,
         settings: UserSettings,
     ) -> Clip | None:
-        crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
-        words = self._transcribe_moment(video_path, moment, settings)
+        with stage("4a клип: кроп-трекинг (YOLO)"):
+            crop_samples, head_regions = self._build_crop_samples(video_path, source, moment, detector, settings)
+        with stage("4b клип: транскрипция (Whisper)"):
+            words = self._transcribe_moment(video_path, moment, settings)
         original_transcript = " ".join(w.text for w in words)
         speech_words = words   # тайминги речи для приглушения музыки (перевод их не меняет, но берём оригинал)
-        words = self._translate_subtitles(words, self.last_moment_language, settings)
+        with stage("4c клип: перевод субтитров (LLM)"):
+            words = self._translate_subtitles(words, self.last_moment_language, settings)
         zone = SafeZone.from_settings((settings.export.width, settings.export.height), settings.safe_zone)
         output_path = self._output_dir / f"{video_path.stem}_moment{index + 1}.mp4"
         subtitle_ass_path, subtitle_files = self._write_subtitles(output_path, words, settings, zone)
@@ -381,7 +390,8 @@ class PipelineRunner:
         )
 
         try:
-            ExportService().export_clip(plan)
+            with stage("5 экспорт (всего)"):
+                ExportService().export_clip(plan)
         except Exception as exc:
             logger.error("Экспорт момента {} из {} не удался: {}", index + 1, video_path.name, exc)
             for path in subtitle_files.values():   # клипа нет — файлы субтитров без него не нужны
@@ -391,10 +401,13 @@ class PipelineRunner:
             if subtitle_ass_path is not None and subtitle_ass_path not in subtitle_files.values():
                 subtitle_ass_path.unlink(missing_ok=True)
 
-        music_file, music_mix = self._add_music(output_path, speech_words, settings)
+        with stage("6 музыка"):
+            music_file, music_mix = self._add_music(output_path, speech_words, settings)
         transcript = " ".join(w.text for w in words)
-        cover_frame = self._pick_cover_frame(video_path, moment)
-        content = self._generate_content(transcript, cover_frame)
+        with stage("7a кадр обложки"):
+            cover_frame = self._pick_cover_frame(video_path, moment)
+        with stage("7b LLM: заголовки/описание/хештеги"):
+            content = self._generate_content(transcript, cover_frame)
         llm_issue = self._clip_llm_issue(content)
         title = content.titles[0] if content.titles else self._default_title(moment)
         cover_path = self._generate_cover(cover_frame, moment, crop_samples, title, output_path, settings)

@@ -149,9 +149,19 @@ def _scaled_with_opacity(sprite: Image.Image, scale: float, opacity: float) -> I
     return sprite
 
 
-def _paste_centered(canvas: Image.Image, sprite: Image.Image, top_left: tuple[int, int], base_size: tuple[int, int]):
+def _centered_xy(sprite: Image.Image, top_left: tuple[int, int], base_size: tuple[int, int]) -> tuple[int, int]:
+    """Левый верхний угол спрайта, отмасштабированного вокруг центра базового прямоугольника."""
     cx, cy = top_left[0] + base_size[0] / 2, top_left[1] + base_size[1] / 2
-    canvas.alpha_composite(sprite, (int(cx - sprite.width / 2), int(cy - sprite.height / 2)))
+    return int(cx - sprite.width / 2), int(cy - sprite.height / 2)
+
+
+@dataclass(frozen=True)
+class OverlayItem:
+    """Спрайт на кадре: key — то, что однозначно задаёт картинку (одинаковый key = одинаковые пиксели)."""
+
+    key: tuple
+    sprite: Image.Image
+    xy: tuple[int, int]
 
 
 @dataclass
@@ -201,26 +211,40 @@ class BrandingOverlay:
                 rects.append((x, y, x + self.subscribe.width, y + self.subscribe.height))
         return rects
 
+    def logo_item(self, t: float) -> "OverlayItem | None":
+        """Спрайт логотипа в момент t и левый верхний угол на кадре (None — не виден)."""
+        if self.logo is None:
+            return None
+        state = compute_logo_animation_state(t)
+        sprite = _scaled_with_opacity(self.logo, state.scale, state.opacity)
+        if sprite is None:
+            return None
+        xy = _centered_xy(sprite, logo_xy(self.logo_position, self.zone, self.logo.size), self.logo.size)
+        return OverlayItem(("logo", state.scale, state.opacity), sprite, xy)
+
+    def subscribe_item(self, t: float) -> "OverlayItem | None":
+        """Спрайт кнопки Subscribe в момент t и левый верхний угол на кадре (None — не виден)."""
+        if self.subscribe is None:
+            return None
+        elapsed = t - SUBSCRIBE_APPEAR_AT_SEC
+        scale = compute_subscribe_button_scale(elapsed)
+        remaining = SUBSCRIBE_VISIBLE_SEC - elapsed
+        if elapsed < 0 or remaining <= 0:
+            return None
+        if remaining < SUBSCRIBE_EXIT_SEC:
+            scale *= remaining / SUBSCRIBE_EXIT_SEC
+        opacity = min(1.0, elapsed / 0.15 + 0.01)
+        sprite = _scaled_with_opacity(self.subscribe, scale, opacity)
+        if sprite is None:
+            return None
+        xy = _centered_xy(sprite, subscribe_xy(self.logo_position, self.zone, self.subscribe.size), self.subscribe.size)
+        return OverlayItem(("subscribe", scale, opacity), sprite, xy)
+
     def draw_on(self, canvas: Image.Image, t: float) -> bool:
         """Рисует на canvas (RGBA, изменяется на месте). True, если что-то нарисовано."""
         drawn = False
-        if self.logo is not None:
-            state = compute_logo_animation_state(t)
-            sprite = _scaled_with_opacity(self.logo, state.scale, state.opacity)
-            if sprite is not None:
-                _paste_centered(canvas, sprite, logo_xy(self.logo_position, self.zone, self.logo.size), self.logo.size)
+        for item in (self.logo_item(t), self.subscribe_item(t)):
+            if item is not None:
+                canvas.alpha_composite(item.sprite, item.xy)
                 drawn = True
-
-        if self.subscribe is not None:
-            elapsed = t - SUBSCRIBE_APPEAR_AT_SEC
-            scale = compute_subscribe_button_scale(elapsed)
-            remaining = SUBSCRIBE_VISIBLE_SEC - elapsed
-            if elapsed >= 0 and remaining > 0:
-                if remaining < SUBSCRIBE_EXIT_SEC:
-                    scale *= remaining / SUBSCRIBE_EXIT_SEC
-                sprite = _scaled_with_opacity(self.subscribe, scale, min(1.0, elapsed / 0.15 + 0.01))
-                if sprite is not None:
-                    xy = subscribe_xy(self.logo_position, self.zone, self.subscribe.size)
-                    _paste_centered(canvas, sprite, xy, self.subscribe.size)
-                    drawn = True
         return drawn
