@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._stack, stretch=1)
 
         self._wire_pipeline_signals()
+        self.settings_view.update_panel.busy_check = lambda: not self._scheduler.is_idle   # во время очереди не обновляем
 
         self._ensure_disk_space(queue_idle=True)
 

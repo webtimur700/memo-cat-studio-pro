@@ -9,6 +9,8 @@ database/repositories/settings_repository.py (Шаг 6-7).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -26,6 +28,7 @@ from PySide6.QtCore import Qt
 
 from core.entities.settings import UserSettings
 from ui.widgets.glass_panel import GlassPanel
+from ui.widgets.update_panel import UpdatePanel
 
 SUBTITLE_STYLE_PRESETS = ["modern_bold", "minimal_clean", "neon_pop", "classic_yellow"]
 LOGO_POSITIONS = ["top_right", "top_left", "bottom_right", "bottom_left"]
@@ -267,6 +270,10 @@ class SettingsView(QWidget):
         self._bitrate_spin.setToolTip("Потолок видеобитрейта клипа (вместе с качеством экспорта: кадр не хуже пресета, поток не выше этого)")
         self._bitrate_spin.valueChanged.connect(self._on_field_changed)
         form.addRow(QLabel("Битрейт видео (максимум)"), self._bitrate_spin)
+
+        # --- Обновления: только по кнопке ---
+        self.update_panel = UpdatePanel(Path(__file__).resolve().parents[2])
+        form.addRow(QLabel("Обновления"), self.update_panel)
 
         self._save_button = QPushButton("Сохранить настройки")
         self._save_button.setObjectName("primaryButton")
