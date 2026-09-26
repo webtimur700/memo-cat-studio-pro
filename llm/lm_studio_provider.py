@@ -129,6 +129,30 @@ class LMStudioProvider(LLMProvider):
         self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None
     ) -> str:
         """images — JPEG-кадры (vision-модели): уходят data-URL'ами вместе с текстом."""
+        return self._chat(system_prompt, user_prompt, max_tokens, images, None)
+
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict,
+        max_tokens: int = 2048,
+        images: list[bytes] | None = None,
+        schema_name: str = "response",
+    ) -> str:
+        """Как complete(), но ответ ограничен JSON-схемой (structured output LM Studio: response_format=json_schema).
+        Возвращает текст JSON; разбирает его вызывающий. Сервер без поддержки схемы (HTTP 400) — LLMRequestError."""
+        response_format = {"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": schema}}
+        return self._chat(system_prompt, user_prompt, max_tokens, images, response_format)
+
+    def _chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int,
+        images: list[bytes] | None,
+        response_format: dict | None,
+    ) -> str:
         model = self._resolve_model()
         url = f"{self._config.base_url}/chat/completions"
 
@@ -149,6 +173,8 @@ class LMStudioProvider(LLMProvider):
         }
         if self._config.reasoning_effort:
             payload_body["reasoning_effort"] = self._config.reasoning_effort
+        if response_format is not None:
+            payload_body["response_format"] = response_format
         body = json.dumps(payload_body).encode("utf-8")
 
         request = urllib.request.Request(
@@ -158,6 +184,11 @@ class LMStudioProvider(LLMProvider):
         try:
             with _LOCAL_OPENER.open(request, timeout=self._config.timeout_sec) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code in (400, 422):   # сервер отверг сам запрос (схема, кадр), он при этом доступен
+                detail = exc.read().decode("utf-8", "replace")[:300]
+                raise LLMRequestError(f"LM Studio ({model}) отклонила запрос: HTTP {exc.code} {detail}") from exc
+            raise LLMUnavailableError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
             raise LLMUnavailableError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
 

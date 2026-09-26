@@ -41,6 +41,7 @@ from core.entities.settings import UserSettings, ViralScoreSettings
 from core.exceptions import MemoCatError
 from core.stage_timer import stage
 from core.entities.subtitle import WordTiming
+from core.priority_lock import PriorityLock
 from cutting.clip_selector_service import WindowScore, select_moments
 from effects.branding_overlay import BrandingOverlay, resolve_logo_path
 from effects.safe_zone import SafeZone
@@ -159,6 +160,7 @@ class PipelineRunner:
         shared_models: SharedModels | None = None,
         plugin_registry=None,
         overlap_llm: bool = True,
+        llm_combined: bool = True,
     ) -> None:
         # assets/logo/logo.png (если положили) подхватывается вместо логотипа по умолчанию
         self._assets_dir = assets_dir or PROJECT_ROOT / "assets"
@@ -166,6 +168,7 @@ class PipelineRunner:
         self._output_dir = output_dir or Path("export/output")
         self._llm_provider = llm_provider
         self._overlap_llm = overlap_llm   # тексты клипа считаются в фоне, пока кодируются следующие (False — по очереди, для замеров)
+        self._llm_combined = llm_combined   # тексты клипа одним JSON-запросом (False — три запроса, для сравнения)
         self._plugins = plugin_registry   # PluginRegistry с эффектами (None — плагинов нет)
         # YOLO и Whisper: если раннер создан очередью — модели общие на все видео, иначе свои на этот раннер
         self._shared = shared_models or SharedModels(self._models_dir)
@@ -173,7 +176,8 @@ class PipelineRunner:
         self._llm_issue: LLMIssue | None = None   # почему LLM не сработала (для всех клипов этого видео)
         self._emit: Callable[..., None] = lambda stage, **data: None
         self._llm_pool: ThreadPoolExecutor | None = None   # фоновый поток LLM-текстов (только внутри process_video)
-        self._llm_lock = threading.Lock()   # один запрос к LLM за раз: и тексты клипа, и перевод субтитров
+        # один запрос к LLM за раз: и тексты клипа (фон), и перевод субтитров (нужен кодированию сразу — идёт вне очереди)
+        self._llm_lock = PriorityLock()
         self._cover_candidate: tuple | None = None   # самый резкий кадр последнего момента: (видео, начало, конец, время, кадр)
         # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
         # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
@@ -605,8 +609,10 @@ class PipelineRunner:
         image_jpeg = None
         if cover_frame is not None and getattr(self._llm_provider, "supports_vision", False):
             image_jpeg = frame_to_jpeg(cover_frame[1])
-        with self._llm_lock:
-            content = generate_clip_content(self._llm_provider, transcript, image_jpeg=image_jpeg)
+        with self._llm_lock.background():
+            content = generate_clip_content(
+                self._llm_provider, transcript, image_jpeg=image_jpeg, combined=self._llm_combined
+            )
         if content.errors:
             failed_completely = content.is_empty
             issue = (getattr(self._llm_provider, "issue", None) if failed_completely else None) or LLMIssue.from_errors(
@@ -903,7 +909,7 @@ class PipelineRunner:
             return words
         from subtitles.translator import translate_words
 
-        with self._llm_lock:
+        with self._llm_lock.urgent():
             translated = translate_words(self._llm_provider, words, target)
         return translated if translated else words
 

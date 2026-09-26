@@ -192,6 +192,19 @@ class ManagedLMStudio:
     def complete(self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None) -> str:
         return self._ensure_ready().complete(system_prompt, user_prompt, max_tokens=max_tokens, images=images)
 
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict,
+        max_tokens: int = 2048,
+        images: list[bytes] | None = None,
+        schema_name: str = "response",
+    ) -> str:
+        return self._ensure_ready().complete_json(
+            system_prompt, user_prompt, schema, max_tokens=max_tokens, images=images, schema_name=schema_name
+        )
+
     def list_models(self) -> list[str]:
         return self._ensure_ready().list_models()
 

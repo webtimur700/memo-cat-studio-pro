@@ -51,6 +51,8 @@ def main() -> None:
     parser.add_argument("--fake-llm-sec", type=float, default=0.0,
                         help="вместо LM Studio — заглушка, отвечающая на каждый из 3 запросов за N/3 с (для замера перекрытия LLM и кодирования)")
     parser.add_argument("--no-overlap", action="store_true", help="тексты LLM по очереди с кодированием (как было до оптимизации)")
+    parser.add_argument("--separate-llm", action="store_true", help="тексты клипа тремя запросами (как до объединения), для сравнения")
+    parser.add_argument("--model", help="ключ модели LM Studio (иначе выбирает селектор по памяти)")
     parser.add_argument("--json")
     parser.add_argument("--encoder", choices=("auto", "vaapi", "x264"), default="auto")
     parser.add_argument("--max-clips", type=int, default=0, help="0 — сколько выберет пайплайн")
@@ -66,14 +68,15 @@ def main() -> None:
         from llm.lm_studio_provider import LMStudioConfig
         from llm.managed_provider import ManagedLMStudio
 
-        llm = ManagedLMStudio(LMStudioConfig(base_url="http://localhost:1234/v1", timeout_sec=900))
+        llm = ManagedLMStudio(LMStudioConfig(base_url="http://localhost:1234/v1", timeout_sec=300, model_override=args.model))
         llm.start_loading_in_background()
 
     if args.fake_llm_sec > 0:
         llm = _FakeLLM(args.fake_llm_sec / 3)
 
     def run(out: Path) -> None:
-        runner = PipelineRunner(models_dir=ROOT / "models", output_dir=out, llm_provider=llm, overlap_llm=not args.no_overlap)
+        runner = PipelineRunner(models_dir=ROOT / "models", output_dir=out, llm_provider=llm, overlap_llm=not args.no_overlap,
+                                llm_combined=not args.separate_llm)
         stage_timer.reset()
         started = time.perf_counter()
         clips = runner.process_video(Path(args.video).expanduser(), settings)
