@@ -146,6 +146,16 @@ ok "Активно: $(which python)"
 # ------------------------------------------------------------
 log "Устанавливаю Python-зависимости проекта (может занять несколько минут)"
 pip install --upgrade pip --quiet
+# torch нужен только ultralytics — для одноразового экспорта YOLO в ONNX (scripts/download_models.py); приложение его не
+# использует (инференс идёт через onnxruntime). Обычный wheel с PyPI — CUDA-сборка: ~5 ГБ библиотек NVIDIA, бесполезных
+# на Radeon, и полчаса загрузки. Ставим CPU-сборку заранее, тогда ultralytics берёт уже установленный torch.
+if python -c "import torch, torchvision" >/dev/null 2>&1; then
+    ok "torch уже установлен"
+else
+    log "Ставлю torch без CUDA (только для экспорта YOLO в ONNX)"
+    pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+        || warn "CPU-сборка torch не установилась — pip возьмёт обычную (CUDA, много гигабайт)"
+fi
 pip install -e ".[dev]" --quiet
 ok "Python-зависимости установлены"
 
