@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 MODELS_DIR = PROJECT_ROOT / "models"
 
 
@@ -55,6 +56,11 @@ def check_faster_whisper_cache() -> None:
         )
         sys.exit(1)
 
+    # ALL_PROXY=socks://… (VPN-клиенты) роняет httpx в huggingface_hub ещё до запроса
+    from core.proxy_env import make_httpx_safe
+
+    for change in make_httpx_safe():
+        print(f"[прокси] {change}")
     print("Прогрев кэша faster-whisper (модель 'small', int8, CPU)...")
     WhisperModel("small", device="cpu", compute_type="int8")
     print("[ok] Модель faster-whisper закэширована")

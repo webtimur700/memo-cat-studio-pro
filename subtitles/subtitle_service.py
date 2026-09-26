@@ -135,6 +135,10 @@ class WhisperTranscriber:
                 "Модель {} не найдена в локальном кэше ({}) — пробую скачать",
                 self._model_size, type(cache_exc).__name__,
             )
+        from core.proxy_env import make_httpx_safe
+
+        for change in make_httpx_safe():   # socks:// в ALL_PROXY роняет httpx (huggingface_hub) до запроса
+            logger.info("Прокси для загрузки модели: {}", change)
         return model_cls(self._model_size, device=self._device, compute_type=self._compute_type)
 
     def transcribe(self, audio_path: Path, language: str | None = None) -> list[WordTiming]:
