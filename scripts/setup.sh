@@ -16,10 +16,28 @@
 #
 # Скрипт идемпотентен — его можно запускать повторно, уже готовые шаги будут
 # пропущены (используйте это же, если что-то прервалось на середине).
+#
+# Параметры:
+#   --skip-models   не скачивать ML-модели (YOLO, Whisper, YAMNet)
+#   --no-run        только установка, приложение не запускать
+# Переменные окружения:
+#   MEMO_CAT_CONTAINER   имя контейнера (по умолчанию memo-cat-studio); run.sh читает ту же переменную
+#   MEMO_CAT_IMAGE       образ контейнера (по умолчанию fedora:40)
+#   MEMO_CAT_CONTAINER_HOME  отдельный домашний каталог контейнера (distrobox --home); по умолчанию — общий с хостом
 set -euo pipefail
 
-CONTAINER_NAME="memo-cat-studio"
-CONTAINER_IMAGE="fedora:40"
+CONTAINER_NAME="${MEMO_CAT_CONTAINER:-memo-cat-studio}"
+CONTAINER_IMAGE="${MEMO_CAT_IMAGE:-fedora:40}"
+CONTAINER_HOME="${MEMO_CAT_CONTAINER_HOME:-}"
+SKIP_MODELS=0
+NO_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --skip-models) SKIP_MODELS=1 ;;
+        --no-run) NO_RUN=1 ;;
+        *) echo "Неизвестный параметр: $arg (есть --skip-models, --no-run)"; exit 2 ;;
+    esac
+done
 PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 
 log()  { echo -e "\n\033[1;35m==> $1\033[0m"; }
@@ -40,20 +58,21 @@ if [ ! -f /run/.containerenv ]; then
     fi
     ok "Distrobox найден"
 
-    if distrobox list 2>/dev/null | grep -qw "$CONTAINER_NAME"; then
+    # имя сравниваем целиком: `grep -w` принял бы "memo-cat-studio-test" за "memo-cat-studio" ('-' не буква)
+    if distrobox list --no-color 2>/dev/null | awk -F'|' 'NR>1 {gsub(/^ +| +$/, "", $2); print $2}' | grep -qxF "$CONTAINER_NAME"; then
         ok "Контейнер '$CONTAINER_NAME' уже существует"
     else
         log "Создаю контейнер '$CONTAINER_NAME' (образ $CONTAINER_IMAGE, GPU проброшен)"
-        distrobox create \
-            --name "$CONTAINER_NAME" \
-            --image "$CONTAINER_IMAGE" \
-            --additional-flags "--device /dev/dri" \
-            --yes
+        create_args=(--name "$CONTAINER_NAME" --image "$CONTAINER_IMAGE" --additional-flags "--device /dev/dri" --yes)
+        if [ -n "$CONTAINER_HOME" ]; then
+            create_args+=(--home "$CONTAINER_HOME")
+        fi
+        distrobox create "${create_args[@]}"
         ok "Контейнер создан"
     fi
 
     log "Захожу в контейнер и продолжаю установку там..."
-    exec distrobox enter "$CONTAINER_NAME" -- bash "$(readlink -f "${BASH_SOURCE[0]}")" "$@"
+    exec distrobox enter "$CONTAINER_NAME" -- env MEMO_CAT_CONTAINER="$CONTAINER_NAME" bash "$(readlink -f "${BASH_SOURCE[0]}")" "$@"
 fi
 
 # ============================================================
@@ -149,7 +168,7 @@ python scripts/check_gpu_support.py || warn "Диагностика заверш
 # ------------------------------------------------------------
 # ШАГ 7: модели (требует сети; при ошибке — не блокируем запуск UI)
 # ------------------------------------------------------------
-if [ "${1:-}" != "--skip-models" ]; then
+if [ "$SKIP_MODELS" -eq 0 ]; then
     log "Загружаю ML-модели (YOLO11 ONNX, faster-whisper) — можно пропустить флагом --skip-models"
     python scripts/download_models.py || warn "Загрузка моделей не удалась — повторить позже: python scripts/download_models.py"
 else
@@ -159,6 +178,10 @@ fi
 # ------------------------------------------------------------
 # ШАГ 8: запуск приложения
 # ------------------------------------------------------------
+if [ "$NO_RUN" -eq 1 ]; then
+    log "Установка завершена (--no-run). Запуск: bash scripts/run.sh"
+    exit 0
+fi
 log "Установка завершена. Запускаю Memo Cat AI Studio Pro..."
 export QT_QPA_PLATFORM=xcb
 export GST_PLUGIN_PATH=/usr/lib64/gstreamer-1.0:/usr/lib/gstreamer-1.0

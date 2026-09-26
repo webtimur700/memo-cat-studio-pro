@@ -13,9 +13,12 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 
+# имя контейнера — как в setup.sh (MEMO_CAT_CONTAINER, по умолчанию memo-cat-studio)
+CONTAINER_NAME="${MEMO_CAT_CONTAINER:-memo-cat-studio}"
+
 if [ ! -f /run/.containerenv ]; then
-    echo "Запускаю через Distrobox-контейнер memo-cat-studio..."
-    exec distrobox enter memo-cat-studio -- bash "$(readlink -f "${BASH_SOURCE[0]}")" "$@"
+    echo "Запускаю через Distrobox-контейнер $CONTAINER_NAME..."
+    exec distrobox enter "$CONTAINER_NAME" -- bash "$(readlink -f "${BASH_SOURCE[0]}")" "$@"
 fi
 
 cd "$PROJECT_ROOT"
