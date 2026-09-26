@@ -68,6 +68,10 @@ distrobox create \
 distrobox enter memo-cat-studio
 ```
 
+Всё это делает и `bash scripts/setup.sh` (запускается с хоста; `--no-run` — только установка, `--skip-models` — без загрузки моделей).
+Имя контейнера, образ и домашний каталог задаются переменными `MEMO_CAT_CONTAINER` (по умолчанию `memo-cat-studio`), `MEMO_CAT_IMAGE`
+(`fedora:40`), `MEMO_CAT_CONTAINER_HOME` (по умолчанию домашний каталог общий с хостом); `scripts/run.sh` читает ту же `MEMO_CAT_CONTAINER`.
+
 Внутри контейнера (после `distrobox enter`):
 
 ```bash
