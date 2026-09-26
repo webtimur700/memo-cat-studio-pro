@@ -52,6 +52,7 @@ def main() -> None:
                         help="вместо LM Studio — заглушка, отвечающая на каждый из 3 запросов за N/3 с (для замера перекрытия LLM и кодирования)")
     parser.add_argument("--no-overlap", action="store_true", help="тексты LLM по очереди с кодированием (как было до оптимизации)")
     parser.add_argument("--separate-llm", action="store_true", help="тексты клипа тремя запросами (как до объединения), для сравнения")
+    parser.add_argument("--separate-decode", action="store_true", help="сцены и сканирование читают видео по отдельности (как до общего прохода), для сравнения")
     parser.add_argument("--model", help="ключ модели LM Studio (иначе выбирает селектор по памяти)")
     parser.add_argument("--json")
     parser.add_argument("--encoder", choices=("auto", "vaapi", "x264"), default="auto")
@@ -76,7 +77,7 @@ def main() -> None:
 
     def run(out: Path) -> None:
         runner = PipelineRunner(models_dir=ROOT / "models", output_dir=out, llm_provider=llm, overlap_llm=not args.no_overlap,
-                                llm_combined=not args.separate_llm)
+                                llm_combined=not args.separate_llm, shared_decode=not args.separate_decode)
         stage_timer.reset()
         started = time.perf_counter()
         clips = runner.process_video(Path(args.video).expanduser(), settings)

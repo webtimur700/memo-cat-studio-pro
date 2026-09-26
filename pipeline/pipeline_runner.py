@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 import threading
 from collections import deque
+from collections.abc import Iterable
+from contextlib import ExitStack
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -58,6 +60,7 @@ from video.ffmpeg_wrapper import FFmpegWrapper
 from video.frame_extractor import FrameExtractor
 from video.ingestion_service import IngestionService
 from video.scene_detector import SceneDetector
+from video.shared_decode import SharedPass, scan_indices_supported
 from vision.smart_crop import CropWindow, SmartCropPlanner
 from vision.mediapipe_face import AnimalHeadRegionEstimator
 from vision.motion_events import analyze_window_motion
@@ -161,6 +164,7 @@ class PipelineRunner:
         plugin_registry=None,
         overlap_llm: bool = True,
         llm_combined: bool = True,
+        shared_decode: bool = True,
     ) -> None:
         # assets/logo/logo.png (если положили) подхватывается вместо логотипа по умолчанию
         self._assets_dir = assets_dir or PROJECT_ROOT / "assets"
@@ -169,6 +173,7 @@ class PipelineRunner:
         self._llm_provider = llm_provider
         self._overlap_llm = overlap_llm   # тексты клипа считаются в фоне, пока кодируются следующие (False — по очереди, для замеров)
         self._llm_combined = llm_combined   # тексты клипа одним JSON-запросом (False — три запроса, для сравнения)
+        self._shared_decode = shared_decode   # сцены и сканирование окон читают видео одним проходом (False — как раньше, двумя)
         self._plugins = plugin_registry   # PluginRegistry с эффектами (None — плагинов нет)
         # YOLO и Whisper: если раннер создан очередью — модели общие на все видео, иначе свои на этот раннер
         self._shared = shared_models or SharedModels(self._models_dir)
@@ -203,25 +208,8 @@ class PipelineRunner:
             source = IngestionService().ingest(video_path)
             detector = _DetectorHandle(detector=self._shared.detector())
 
-        # детекция сцен читает всё видео целиком одним потоком и не зависит от YOLO — идёт параллельно со сканированием
-        # окон; число смен сцены в окне (влияет на оценку) достраивается, когда обе части готовы
-        scene_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scenes")
-        scenes_future = scene_pool.submit(self._timed_scene_detection, video_path)
-        try:
-            emit("scoring")
-            with stage("2a скоринг: звуковые события (YAMNet)"):
-                audio_events = self._analyze_audio_events(video_path)
-            with stage("2b скоринг: сканирование окон (YOLO)"):
-                window_scores = self._scan_windows(
-                    video_path, source.duration_sec, detector, [], audio_events, settings.viral_score
-                )
-            with stage("1b анализ: ожидание детекции сцен"):
-                scenes = scenes_future.result()
-        finally:
-            scene_pool.shutdown(wait=True)
-        window_scores = self._apply_scene_changes(window_scores, scenes, settings.viral_score)
-        with stage("2c скоринг: прыжки/падения (поза)"):
-            window_scores = self._add_motion_events(video_path, window_scores, detector, scenes, settings.viral_score)
+        emit("scoring")
+        window_scores, scenes = self._score_windows(video_path, source, detector, settings)
 
         emit("cutting")
         scene_boundaries = sorted(
@@ -266,6 +254,42 @@ class PipelineRunner:
 
         emit("done", moments_found=len(clips))
         return clips
+
+    def _score_windows(
+        self, video_path: Path, source, detector: "_DetectorHandle", settings: UserSettings
+    ) -> tuple[list[WindowScore], list[SceneSegment]]:
+        """Окна видео с Viral Score и сцены: звуковые события, сканирование (YOLO), смены сцены, прыжки/падения."""
+        weights = settings.viral_score
+        with stage("2a скоринг: звуковые события (YAMNet)"):
+            audio_events = self._analyze_audio_events(video_path)
+
+        if self._shared_decode and scan_indices_supported(source.fps, SAMPLE_FPS_SCAN):
+            # один проход декодера: детекция сцен и сканирование окон читают одни и те же кадры
+            with SharedPass(video_path, SAMPLE_FPS_SCAN, source.duration_sec, scenes=SceneDetector()) as shared:
+                with stage("2b скоринг: сканирование окон (YOLO) + сцены, общий проход"):
+                    window_scores = self._scan_windows(
+                        video_path, source.duration_sec, detector, [], audio_events, weights, frames=shared.scan_frames()
+                    )
+                with stage("1b анализ: ожидание детекции сцен"):
+                    scenes = shared.finish_scenes()
+            if scenes is None:
+                scenes = []
+        else:
+            # детекция сцен читает всё видео целиком отдельным потоком и не зависит от YOLO — идёт параллельно со
+            # сканированием окон; число смен сцены в окне (влияет на оценку) достраивается, когда обе части готовы
+            scene_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="scenes")
+            scenes_future = scene_pool.submit(self._timed_scene_detection, video_path)
+            try:
+                with stage("2b скоринг: сканирование окон (YOLO)"):
+                    window_scores = self._scan_windows(video_path, source.duration_sec, detector, [], audio_events, weights)
+                with stage("1b анализ: ожидание детекции сцен"):
+                    scenes = scenes_future.result()
+            finally:
+                scene_pool.shutdown(wait=True)
+        window_scores = self._apply_scene_changes(window_scores, scenes, weights)
+        with stage("2c скоринг: прыжки/падения (поза)"):
+            window_scores = self._add_motion_events(video_path, window_scores, detector, scenes, weights)
+        return window_scores, scenes
 
     # ------------------------------------------------------------------
     def _analyze_audio_events(self, video_path: Path) -> AudioEventTimeline | None:
@@ -351,13 +375,17 @@ class PipelineRunner:
         scenes: list[SceneSegment],
         audio_events: AudioEventTimeline | None = None,
         weights: ViralScoreSettings | None = None,
+        frames: Iterable[tuple[float, np.ndarray]] | None = None,
     ) -> list[WindowScore]:
+        """frames — готовый поток (время, кадр) на SAMPLE_FPS_SCAN (общий проход, video/shared_decode.py); без него видео читается само."""
         results: list[WindowScore] = []
         default_weights = weights or ViralScoreSettings()
 
-        with FrameExtractor(video_path) as extractor, detected_stream(
-            detector.detector, extractor.frames_in_range(0.0, duration_sec, sample_fps=SAMPLE_FPS_SCAN)
-        ) as stream:
+        with ExitStack() as stack:
+            if frames is None:
+                extractor = stack.enter_context(FrameExtractor(video_path))
+                frames = extractor.frames_in_range(0.0, duration_sec, sample_fps=SAMPLE_FPS_SCAN)
+            stream = stack.enter_context(detected_stream(detector.detector, frames))
             # кадры всего видео идут одним потоком (декодирование подряд + YOLO в потоках), окна режут его по времени
             pending = next(stream, None)
             window_start = 0.0
