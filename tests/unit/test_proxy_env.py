@@ -44,8 +44,10 @@ def test_supported_and_empty_values_are_untouched(monkeypatch):
     monkeypatch.setattr(proxy_env.importlib.util, "find_spec", lambda name: None)
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
     monkeypatch.setenv("HTTPS_PROXY", "https://proxy.example:3128")
-    monkeypatch.setenv("FTP_PROXY", "")
+    monkeypatch.setenv("http_proxy", "")
+    monkeypatch.setenv("FTP_PROXY", "ftp://127.0.0.1:2080")   # httpx его не читает — не трогаем
     assert proxy_env.make_httpx_safe() == []
+    assert os.environ["FTP_PROXY"] == "ftp://127.0.0.1:2080"
     assert os.environ["HTTP_PROXY"] == "http://127.0.0.1:1"
 
 

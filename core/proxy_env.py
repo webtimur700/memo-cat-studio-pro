@@ -14,9 +14,7 @@ from __future__ import annotations
 import importlib.util
 import os
 
-PROXY_VARIABLES = (
-    "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "FTP_PROXY", "ftp_proxy",
-)
+PROXY_VARIABLES = ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy")   # те, что читает httpx
 _HTTPX_SCHEMES = ("http", "https", "socks5", "socks5h")
 
 
