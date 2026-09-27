@@ -10,7 +10,9 @@ scripts/check_av_sync.py меряет рассинхрон звука и вид�
 Создаёт в OUT_DIR:
   cfr1080p60.mp4      — контроль: 1080p60 H.264, как исходник
   vfr1080.mp4         — переменная частота: ~40% кадров выброшено случайно, метки времени кадров сохранены
-                        (так пишут телефоны: интервалы между кадрами неравные, звук непрерывный)
+                        (интервалы между кадрами неравные, звук непрерывный; средняя частота близка к любой точке)
+  vfr_lowlight.mp4    — переменная частота как у телефона в темноте: 30 fps, с 60-й по 120-ю секунду 15 fps, дальше 30.
+                        Номер кадра / средний fps здесь расходится со временем на секунды — это и проверяется
   uhd4k30_hevc.mp4    — 3840x2160, 30 fps, HEVC 45 Мбит/с (как 4K с телефона)
   uhd4k60_h264.mp4    — 3840x2160, 60 fps, H.264 100 Мбит/с (самое тяжёлое декодирование)
   hibitrate1080p60.mp4 — 1080p60 H.264 80 Мбит/с
@@ -48,6 +50,10 @@ def filters(times: list[float], duration: float) -> tuple[str, str]:
 VARIANTS = {
     "cfr1080p60.mp4": (["-c:v", "libx264", "-preset", "veryfast", "-crf", "18"], None),
     "vfr1080.mp4": (["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-fps_mode", "vfr"], "select='gt(random(0),0.4)'"),
+    "vfr_lowlight.mp4": (
+        ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-fps_mode", "vfr"],
+        "select='if(between(t,60,120),not(mod(n,4)),not(mod(n,2)))'",
+    ),
     "uhd4k30_hevc.mp4": (
         ["-c:v", "libx265", "-preset", "ultrafast", "-b:v", "45M", "-tag:v", "hvc1", "-x265-params", "log-level=error"],
         "fps=30,scale=3840:2160:flags=lanczos",

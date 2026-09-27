@@ -19,6 +19,7 @@ faster-whisper) могут быть не скачаны, LM Studio может б
 from __future__ import annotations
 
 import json
+import subprocess
 import threading
 from collections import deque
 from collections.abc import Iterable
@@ -58,6 +59,7 @@ from subtitles.ass_renderer import estimate_subtitle_band_height, render_ass, re
 from subtitles.subtitle_service import group_words_into_segments
 from video.ffmpeg_wrapper import FFmpegWrapper
 from video.frame_extractor import FrameExtractor
+from video.frame_timing import make_cfr_proxy, probe_frame_timing
 from video.ingestion_service import IngestionService
 from video.scene_detector import SceneDetector
 from video.shared_decode import SharedPass, scan_indices_supported
@@ -183,6 +185,8 @@ class PipelineRunner:
         self._llm_pool: ThreadPoolExecutor | None = None   # фоновый поток LLM-текстов (только внутри process_video)
         # один запрос к LLM за раз: и тексты клипа (фон), и перевод субтитров (нужен кодированию сразу — идёт вне очереди)
         self._llm_lock = PriorityLock()
+        # VFR-видео: кадры для анализа читаются из CFR-копии (video/frame_timing.py); звук и экспорт — из оригинала
+        self._analysis_copies: dict[Path, Path] = {}
         self._cover_candidate: tuple | None = None   # самый резкий кадр последнего момента: (видео, начало, конец, время, кадр)
         # транскрипции диапазонов видео (слова с АБСОЛЮТНЫМИ таймкодами): и поиск пауз для
         # границ моментов, и субтитры берут слова отсюда, а не транскрибируют звук дважды
@@ -207,7 +211,37 @@ class PipelineRunner:
         with stage("1 анализ: ingest"):
             source = IngestionService().ingest(video_path)
             detector = _DetectorHandle(detector=self._shared.detector())
+        try:
+            self._prepare_frames_source(video_path)
+            return self._process_ingested(video_path, source, detector, settings, emit)
+        finally:
+            copy = self._analysis_copies.pop(video_path, None)
+            if copy is not None:
+                copy.unlink(missing_ok=True)
 
+    def _frames_source(self, video_path: Path) -> Path:
+        """Откуда анализ читает КАДРЫ (OpenCV/PySceneDetect): CFR-копия для VFR-видео, иначе сам файл."""
+        return self._analysis_copies.get(video_path, video_path)
+
+    def _prepare_frames_source(self, video_path: Path) -> None:
+        with stage("1 анализ: проверка частоты кадров (VFR)"):
+            timing = probe_frame_timing(video_path)
+            if timing is None or not timing.needs_cfr_proxy:
+                return
+            logger.warning(
+                "{}: переменная частота кадров (интервалы {:.1f}–{:.1f} мс, номер кадра / {:.2f} fps расходится со временем "
+                "до {:.2f} с) — анализ по CFR-копии {:g} fps, экспорт из оригинала",
+                video_path.name, timing.min_interval_ms, timing.max_interval_ms, timing.avg_fps, timing.max_drift_sec,
+                timing.proxy_fps,
+            )
+            copy = self._output_dir / f"_tmp_cfr_{video_path.stem}.mp4"
+            try:
+                self._analysis_copies[video_path] = make_cfr_proxy(video_path, copy, timing.proxy_fps)
+            except (OSError, subprocess.SubprocessError) as exc:
+                copy.unlink(missing_ok=True)
+                logger.warning("CFR-копия {} не сделана ({}) — анализ по оригиналу, кроп может съезжать", video_path.name, exc)
+
+    def _process_ingested(self, video_path: Path, source, detector, settings: UserSettings, emit) -> list[Clip]:
         emit("scoring")
         window_scores, scenes = self._score_windows(video_path, source, detector, settings)
 
@@ -265,7 +299,7 @@ class PipelineRunner:
 
         if self._shared_decode and scan_indices_supported(source.fps, SAMPLE_FPS_SCAN):
             # один проход декодера: детекция сцен и сканирование окон читают одни и те же кадры
-            with SharedPass(video_path, SAMPLE_FPS_SCAN, source.duration_sec, scenes=SceneDetector()) as shared:
+            with SharedPass(self._frames_source(video_path), SAMPLE_FPS_SCAN, source.duration_sec, scenes=SceneDetector()) as shared:
                 with stage("2b скоринг: сканирование окон (YOLO) + сцены, общий проход"):
                     window_scores = self._scan_windows(
                         video_path, source.duration_sec, detector, [], audio_events, weights, frames=shared.scan_frames()
@@ -324,7 +358,7 @@ class PipelineRunner:
         result = list(windows)
         found = 0
         try:
-            with FrameExtractor(video_path) as extractor:
+            with FrameExtractor(self._frames_source(video_path)) as extractor:
                 for i in candidates:
                     window = windows[i]
                     summary = analyze_window_motion(extractor, detector.detector, window.start_sec, window.end_sec, cuts)
@@ -362,7 +396,7 @@ class PipelineRunner:
 
     def _detect_scenes_safely(self, video_path: Path) -> list[SceneSegment]:
         try:
-            return SceneDetector().detect(video_path)
+            return SceneDetector().detect(self._frames_source(video_path))
         except Exception as exc:
             logger.warning("Детекция сцен недоступна для {}: {} — считаю 0 смен сцены", video_path.name, exc)
             return []
@@ -383,7 +417,7 @@ class PipelineRunner:
 
         with ExitStack() as stack:
             if frames is None:
-                extractor = stack.enter_context(FrameExtractor(video_path))
+                extractor = stack.enter_context(FrameExtractor(self._frames_source(video_path)))
                 frames = extractor.frames_in_range(0.0, duration_sec, sample_fps=SAMPLE_FPS_SCAN)
             stream = stack.enter_context(detected_stream(detector.detector, frames))
             # кадры всего видео идут одним потоком (декодирование подряд + YOLO в потоках), окна режут его по времени
@@ -670,7 +704,7 @@ class PipelineRunner:
         if candidate is not None and candidate[:3] == (video_path, moment.start_sec, moment.end_sec):
             return candidate[3], candidate[4]
         try:
-            with FrameExtractor(video_path) as extractor:
+            with FrameExtractor(self._frames_source(video_path)) as extractor:
                 return extractor.best_frame_for_cover(moment.start_sec, moment.end_sec)
         except Exception as exc:
             logger.warning("Кадр обложки для момента {:.1f}s не получен: {}", moment.start_sec, exc)
@@ -790,7 +824,7 @@ class PipelineRunner:
 
         best_sharpness = -1.0
         self._cover_candidate = None
-        with FrameExtractor(video_path) as extractor, detected_stream(
+        with FrameExtractor(self._frames_source(video_path)) as extractor, detected_stream(
             detector.detector if detector.available else None,
             extractor.frames_in_range(moment.start_sec, moment.end_sec, sample_fps=SAMPLE_FPS_CROP),
         ) as stream:

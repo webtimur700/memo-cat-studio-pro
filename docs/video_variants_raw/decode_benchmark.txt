@@ -1,0 +1,52 @@
+=== cfr1080p60
+
+способ                                                               с  кадров/с
+OpenCV grab                                                        1.7      2180
+OpenCV read                                                        3.4      1046
+OpenCV read_resize                                                 4.1       872
+ffmpeg CPU: декодирование                                          2.0      1782
+ffmpeg CPU: декод. + уменьш. до кадра сцен (bgr24)                 3.2      1120
+ffmpeg CPU: декод. + уменьш. до входа YOLO (bgr24)                 3.8       959
+ffmpeg VAAPI: декодирование                                        3.3      1101
+ffmpeg VAAPI: декод. + уменьш. до кадра сцен (bgr24)               4.6       777
+ffmpeg VAAPI: декод. + уменьш. до входа YOLO (bgr24)               4.9       738
+ffmpeg VAAPI: декод., кадр 1920x1080 на CPU (bgr24)               10.3       351
+=== hibitrate1080p60
+
+способ                                                               с  кадров/с
+OpenCV grab                                                        5.4       671
+OpenCV read                                                        6.1       590
+OpenCV read_resize                                                 6.3       570
+ffmpeg CPU: декодирование                                          5.8       626
+ffmpeg CPU: декод. + уменьш. до кадра сцен (bgr24)                 6.6       546
+ffmpeg CPU: декод. + уменьш. до входа YOLO (bgr24)                 6.9       518
+ffmpeg VAAPI: декодирование                                        4.6       774
+ffmpeg VAAPI: декод. + уменьш. до кадра сцен (bgr24)               6.1       585
+ffmpeg VAAPI: декод. + уменьш. до входа YOLO (bgr24)               6.4       564
+ffmpeg VAAPI: декод., кадр 1920x1080 на CPU (bgr24)               11.0       328
+=== uhd4k30_hevc
+
+способ                                                               с  кадров/с
+OpenCV grab                                                        8.8       205
+OpenCV read                                                       10.5       171
+OpenCV read_resize                                                10.7       169
+ffmpeg CPU: декодирование                                         10.2       177
+ffmpeg CPU: декод. + уменьш. до кадра сцен (bgr24)                11.2       161
+ffmpeg CPU: декод. + уменьш. до входа YOLO (bgr24)                11.5       157
+ffmpeg VAAPI: декодирование                                        7.5       240
+ffmpeg VAAPI: декод. + уменьш. до кадра сцен (bgr24)               8.4       213
+ffmpeg VAAPI: декод. + уменьш. до входа YOLO (bgr24)               8.5       211
+ffmpeg VAAPI: декод., кадр 1920x1080 на CPU (bgr24)               17.0       106
+=== uhd4k60_h264
+
+способ                                                               с  кадров/с
+OpenCV grab                                                        5.6       647
+OpenCV read                                                       13.7       263
+OpenCV read_resize                                                15.0       241
+ffmpeg CPU: декодирование                                          5.9       607
+ffmpeg CPU: декод. + уменьш. до кадра сцен (bgr24)                 8.7       414
+ffmpeg CPU: декод. + уменьш. до входа YOLO (bgr24)                 9.3       386
+ffmpeg VAAPI: декодирование                                        9.5       380
+ffmpeg VAAPI: декод. + уменьш. до кадра сцен (bgr24)              11.3       319
+ffmpeg VAAPI: декод. + уменьш. до входа YOLO (bgr24)              11.5       314
+ffmpeg VAAPI: декод., кадр 1920x1080 на CPU (bgr24)               79.6        45

@@ -85,6 +85,11 @@ YouTube Shorts из длинных видео с животными: поиск 
   сканирования). VAAPI-декодирование и уменьшение кадра в ffmpeg проверены и отвергнуты
   (медленнее / другие сцены): `docs/analysis_decoding.md`. Скорость сверять по РЕЗУЛЬТАТУ
   (число детекций, окон), а не только по времени: «ускорение» с молча упавшей YOLO уже было.
+- VFR (телефоны): время кадра в анализе = номер / fps, поэтому VFR-видео анализируется по CFR-копии
+  (`video/frame_timing.py`, `PipelineRunner._frames_source`); звук и экспорт — из оригинала. OpenCV открывать
+  через `open_capture()` (автоповорот по тегу поворота), размеры `VideoSource` учитывают поворот. Проверка
+  синхронизации и границ на видео с метками: `scripts/make_test_videos.py` + `scripts/check_av_sync.py`,
+  `docs/video_variants.md`.
 - `ALL_PROXY=socks://` роняет httpx (huggingface_hub): `core/proxy_env.make_httpx_safe()`
   вызывается перед сетевой загрузкой моделей.
 - В `scripts/setup.sh` torch ставится CPU-сборкой заранее: обычный wheel — ~5 ГБ CUDA впустую

@@ -24,7 +24,7 @@ from loguru import logger
 
 from core.entities.scene_segment import SceneSegment
 from core.exceptions import VideoDecodeError
-from video.frame_extractor import SEEK_GAP_FRAMES
+from video.frame_extractor import SEEK_GAP_FRAMES, open_capture
 from video.scene_detector import SceneStream
 
 GRAB_RETRIES = 5          # как _max_decode_attempts в PySceneDetect: повторы grab при сбое декодирования
@@ -68,7 +68,7 @@ class SharedPass:
 
     # ------------------------------------------------------------------ жизненный цикл
     def __enter__(self) -> "SharedPass":
-        capture = cv2.VideoCapture(str(self._path))
+        capture = open_capture(self._path)
         if not capture.isOpened():
             raise VideoDecodeError(f"OpenCV не смог открыть видео: {self._path}")
         fps = capture.get(cv2.CAP_PROP_FPS) or 0.0

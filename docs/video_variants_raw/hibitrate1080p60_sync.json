@@ -1,0 +1,106 @@
+{
+  "summary": {
+    "clips": 3,
+    "markers_in_clips": 3,
+    "missed": 0,
+    "av_offset_ms": [
+      4.0,
+      21.3
+    ],
+    "video_err_ms": [
+      -16.6,
+      0.0
+    ],
+    "audio_err_ms": [
+      4.0,
+      4.7
+    ],
+    "max_duration_mismatch_ms": 7.0,
+    "max_av_duration_diff_ms": 163.0,
+    "animal_seen": 0.672,
+    "animal_centered": 0.672
+  },
+  "clips": [
+    {
+      "clip": "hibitrate1080p60_moment1.mp4",
+      "start_sec": 40.2,
+      "end_sec": 61.5,
+      "moment_len": 21.3,
+      "video": "h264 1080x1920 r=30/1 avg=30/1",
+      "v_duration": 21.3,
+      "a_duration": 21.3,
+      "v_start": 0.0,
+      "a_start": 0.0,
+      "frames": 639,
+      "pts_gaps_max_ms": 33.4,
+      "unmatched_flashes": 1,
+      "markers": [
+        {
+          "expected_sec": 11.8,
+          "video_err_ms": 0.0,
+          "audio_err_ms": 4.0,
+          "av_offset_ms": 4.0
+        }
+      ],
+      "framing": {
+        "sampled": 43,
+        "animal_seen": 0.698,
+        "animal_centered": 0.698
+      }
+    },
+    {
+      "clip": "hibitrate1080p60_moment2.mp4",
+      "start_sec": 74.81666666666666,
+      "end_sec": 96.21,
+      "moment_len": 21.393,
+      "video": "h264 1080x1920 r=30/1 avg=30/1",
+      "v_duration": 21.4,
+      "a_duration": 21.4,
+      "v_start": 0.0,
+      "a_start": 0.0,
+      "frames": 642,
+      "pts_gaps_max_ms": 33.4,
+      "unmatched_flashes": 0,
+      "markers": [
+        {
+          "expected_sec": 10.783,
+          "video_err_ms": -16.6,
+          "audio_err_ms": 4.7,
+          "av_offset_ms": 21.3
+        }
+      ],
+      "framing": {
+        "sampled": 43,
+        "animal_seen": 0.581,
+        "animal_centered": 0.581
+      }
+    },
+    {
+      "clip": "hibitrate1080p60_moment3.mp4",
+      "start_sec": 165.0,
+      "end_sec": 180.0,
+      "moment_len": 15.0,
+      "video": "h264 1080x1920 r=30/1 avg=30/1",
+      "v_duration": 15.0,
+      "a_duration": 14.837,
+      "v_start": 0.0,
+      "a_start": 0.0,
+      "frames": 450,
+      "pts_gaps_max_ms": 33.4,
+      "unmatched_flashes": 0,
+      "markers": [
+        {
+          "expected_sec": 4.5,
+          "video_err_ms": 0.0,
+          "audio_err_ms": 4.0,
+          "av_offset_ms": 4.0
+        }
+      ],
+      "framing": {
+        "sampled": 30,
+        "animal_seen": 0.767,
+        "animal_centered": 0.767
+      }
+    }
+  ]
+}

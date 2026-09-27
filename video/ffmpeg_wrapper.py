@@ -115,18 +115,37 @@ class FFmpegWrapper:
             raise VideoDecodeError(f"Не удалось определить длительность видео {path}.")
 
         fps = self._parse_frame_rate(video_stream.get("r_frame_rate", "0/1"))
+        width, height = int(video_stream.get("width", 0)), int(video_stream.get("height", 0))
+        if self.rotation_degrees(video_stream) % 180 == 90:
+            # телефон: кадры лежат, показываются стоя (display matrix). ffmpeg и OpenCV (open_capture) отдают
+            # повёрнутый кадр, поэтому размеры источника — видимые, иначе кроп считается для лежачего кадра
+            width, height = height, width
 
         return VideoSource(
             path=path,
             duration_sec=float(duration_raw),
-            width=int(video_stream.get("width", 0)),
-            height=int(video_stream.get("height", 0)),
+            width=width,
+            height=height,
             fps=fps,
             video_codec=video_stream.get("codec_name", "unknown"),
             audio_codec=audio_stream.get("codec_name") if audio_stream else None,
             has_audio=audio_stream is not None,
             file_size_bytes=int(format_info.get("size", 0)),
         )
+
+    @staticmethod
+    def rotation_degrees(video_stream: dict) -> int:
+        """Поворот из метаданных потока (side data «Display Matrix» или старый тег rotate), 0..359."""
+        for side in video_stream.get("side_data_list") or ():
+            if "rotation" in side:
+                try:
+                    return int(round(float(side["rotation"]))) % 360
+                except (TypeError, ValueError):
+                    return 0
+        try:
+            return int((video_stream.get("tags") or {}).get("rotate", 0)) % 360
+        except (TypeError, ValueError):
+            return 0
 
     @staticmethod
     def _parse_frame_rate(raw: str) -> float:

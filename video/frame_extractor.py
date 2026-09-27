@@ -71,10 +71,19 @@ def prefetched(frames: Iterator, depth: int = 3) -> Iterator:
         thread.join(timeout=5)
 
 
+def open_capture(path: Path) -> cv2.VideoCapture:
+    """VideoCapture с поворотом по метаданным. Телефон пишет вертикальное видео горизонтальными кадрами с тегом
+    поворота (display matrix); ffmpeg при экспорте поворачивает кадр сам, а OpenCV в этой сборке по умолчанию нет —
+    без этого кроп считался в координатах лежачего кадра и применялся к стоячему."""
+    capture = cv2.VideoCapture(str(path))
+    capture.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+    return capture
+
+
 class FrameExtractor:
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._capture = cv2.VideoCapture(str(path))
+        self._capture = open_capture(path)
         if not self._capture.isOpened():
             raise VideoDecodeError(f"OpenCV не смог открыть видео: {path}")
 
