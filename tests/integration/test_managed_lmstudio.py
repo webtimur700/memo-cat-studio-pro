@@ -1,11 +1,13 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from llm.lm_studio_provider import LLMUnavailableError, LMStudioConfig
+from llm.lm_studio_provider import LLMTimeoutError, LLMUnavailableError, LMStudioConfig
 from llm.managed_provider import ManagedLMStudio
+from llm.model_health import ModelHealth
 from llm.model_selector import ModelProfile, select_model  # noqa: F401
 import llm.model_selector as model_selector
 
@@ -17,6 +19,7 @@ class _State:
         self.unload_calls: list[str] = []
         self.chat_bodies: list[dict] = []
         self.admin_api = True
+        self.slow_models: set[str] = set()     # чат-запрос к этим моделям «зависает»
 
 
 def _models_payload(state: _State):
@@ -66,6 +69,8 @@ def _make_handler(state: _State):
                 self._send({"instance_id": body["instance_id"]})
             elif self.path == "/v1/chat/completions":
                 state.chat_bodies.append(body)
+                if body["model"] in state.slow_models:
+                    time.sleep(1.0)
                 self._send({"choices": [{"message": {"content": "1. Заголовок"}}], "usage": {"completion_tokens": 3}})
             else:
                 self._send({"error": "no"}, 404)
@@ -219,7 +224,7 @@ def test_not_enough_memory_gives_a_structured_issue_with_numbers_and_notifies_li
         managed.complete("s", "u")
     issue = managed.issue
     assert issue.kind == "no_memory" and issue.free_gib == pytest.approx(6.0) and issue.reserve_gib == pytest.approx(6.0)
-    assert issue.need_gib == pytest.approx(4_000_000_000 / 2**30 * 0.8 + 1, abs=0.1)    # самая лёгкая модель
+    assert issue.need_gib == pytest.approx(4_000_000_000 / 2**30 + 1, abs=0.1)    # самая лёгкая модель
     assert "vendor/small-chat" in issue.message and "ГиБ" in issue.message and "запас" in issue.hint.lower()
     assert seen == [issue] and state.load_calls == []
 
@@ -238,7 +243,7 @@ def test_success_clears_the_issue_and_reserve_can_be_lowered_from_settings(lm_se
     seen = []
     managed = ManagedLMStudio(LMStudioConfig(base_url=url), reserve_mib=6 * 1024, mem_reader=lambda: 8 * 1024, on_issue=seen.append)
     with pytest.raises(LLMUnavailableError):
-        managed.complete("s", "u")                   # бюджет 8 - 6 = 2 ГиБ: даже small-chat (~4.2 ГиБ) не влезает
+        managed.complete("s", "u")                   # бюджет 8 - 6 = 2 ГиБ: даже small-chat (~4.7 ГиБ) не влезает
     assert managed.issue.kind == "no_memory"
 
     managed.set_reserve_mib(2 * 1024)                # пользователь уменьшил запас в настройках
@@ -246,3 +251,49 @@ def test_success_clears_the_issue_and_reserve_can_be_lowered_from_settings(lm_se
     assert managed.complete("s", "u") == "1. Заголовок"
     assert managed.issue is None and seen[-1] is None
     assert managed.selection.model_key == "vendor/small-chat"
+
+
+def test_timeout_demotes_the_model_reports_it_and_reselects_another(lm_server, tmp_path):
+    state, url = lm_server
+    state.slow_models = {"vendor/big-vision"}
+    seen = []
+    health = ModelHealth(tmp_path / "health.json")
+    managed = ManagedLMStudio(LMStudioConfig(base_url=url, timeout_sec=0.3), reserve_mib=1024,
+                              mem_reader=lambda: 64 * 1024, on_issue=seen.append, health=health)
+    with pytest.raises(LLMTimeoutError):
+        managed.complete("s", "u")
+    assert managed.issue.kind == "timeout" and "vendor/big-vision" in managed.issue.message
+    assert "понижена" in managed.issue.message and seen[-1] is managed.issue
+    assert health.penalized() == {"vendor/big-vision"}
+    assert ModelHealth(tmp_path / "health.json").penalized() == {"vendor/big-vision"}    # переживает перезапуск
+
+    assert managed.complete("s", "u") == "1. Заголовок"     # перевыбрана модель без сбоя
+    assert managed.selection.model_key == "vendor/small-chat"
+    assert "понижены за недавний таймаут" in managed.selection.reason
+    assert state.unload_calls == ["vendor/big-vision"] and state.loaded == ["vendor/small-chat"]
+    assert managed.issue.kind == "timeout"                  # предупреждение не стирается перевыбором
+    managed.release()
+    assert state.loaded == []
+
+
+def test_success_clears_the_penalty(lm_server):
+    state, url = lm_server
+    health = ModelHealth()
+    health.record_failure("vendor/big-vision", "тест")
+    managed = ManagedLMStudio(LMStudioConfig(base_url=url), reserve_mib=1024, mem_reader=lambda: 64 * 1024, health=health)
+    managed.complete("s", "u")
+    assert managed.selection.model_key == "vendor/small-chat"     # штрафованная ниже
+    managed.release()
+    only_big = ManagedLMStudio(LMStudioConfig(base_url=url, model_override="vendor/big-vision"), health=health,
+                               mem_reader=lambda: 64 * 1024)
+    only_big.complete("s", "u")
+    assert health.penalized() == frozenset()
+
+
+def test_model_health_penalty_expires():
+    clock = [1000.0]
+    health = ModelHealth(now=lambda: clock[0], ttl_sec=60)
+    health.record_failure("m", "таймаут")
+    assert health.penalized() == {"m"}
+    clock[0] += 61
+    assert health.penalized() == frozenset()

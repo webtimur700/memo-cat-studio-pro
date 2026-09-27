@@ -6,14 +6,24 @@
      они лежат в общем списке, поэтому "первая из списка" давала случайный выбор).
   3. Среди чат-моделей берётся лучшая по рейтингу (DEFAULT_PROFILES, составлен
      по замерам docs/llm_benchmark.md), которой хватает свободной памяти
-     (MemAvailable) с запасом под остальной пайплайн (Whisper, YOLO, ffmpeg, Qt).
-     Не влезла — берётся следующая, меньшая.
-  4. Модели вне рейтинга идут после известных: чем крупнее (из влезающих), тем лучше.
+     (MemAvailable + то, что вернёт выгрузка уже загруженных LLM) с запасом под
+     остальной пайплайн (Whisper, YOLO, ffmpeg, Qt).
+  4. Не влезла — запасной может быть только модель, которая МЕНЬШЕ (помещается) и НЕ МЕДЛЕННЕЕ
+     лучшей из не влезших: по измеренным секундам на клип, иначе по числу активных параметров
+     (26B-A4B -> 4B). Следующая по рейтингу, но медленнее, запасной не считается: так при нехватке
+     0.2 ГиБ под Gemma (~30 с/клип) селектор брал плотную Qwen3.8-27B (140–190 с/клип, зависания).
+     Нет такой — модели нет, клипы получают заголовки по умолчанию, интерфейс показывает причину.
+  5. Память модели — измеренный пик (профиль), а не доля размера GGUF: у MoE пик заметно меньше
+     файла, у плотной — больше (Qwen3.8: файл 16.5 ГиБ, пик с кадром до 16.8 ГиБ), поэтому по файлу
+     плотная Qwen3.8 выглядела «меньше» Gemma (16.8 ГиБ). Для неизвестных — оценка по размеру файла.
+  6. Модели, недавно не ответившие за таймаут (llm/model_health.py), идут после остальных.
+  7. Модели вне рейтинга идут после известных: чем крупнее (из влезающих), тем лучше.
 Решение и его причина возвращаются строкой — вызывающий пишет её в лог.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,11 +35,14 @@ MIB = 1024**2
 # буферы ffmpeg/libx264 при кодировании 1080x1920, Qt-интерфейс, система.
 DEFAULT_PIPELINE_RESERVE_MIB = 6 * 1024
 
-# Оценка занятой памяти = доля размера GGUF (часть весов остаётся в page cache/GTT и
-# вытесняется по необходимости, поэтому MemAvailable падает меньше размера файла:
-# замеры 50–66%, пик при генерации с кадром до ~80%) + KV-кэш выбранного контекста.
-FOOTPRINT_RATIO = 0.8
+# Оценка для модели без замера = доля размера GGUF + KV-кэш. Доля 1.0, а не меньше: у плотной модели пик
+# с кадром достигает размера файла (Qwen3.8: 16.8 при файле 16.5 ГиБ), у MoE он меньше — завышение для
+# неизвестной MoE безопаснее, чем занижение для неизвестной плотной.
+FOOTPRINT_RATIO = 1.0
 KV_CACHE_MIB = 1024
+# Сколько вернёт выгрузка загруженной модели без замера: нижняя граница замеров (MemAvailable падает на
+# 45–66% размера файла) — лучше недосчитать освобождаемое, чем пообещать память, которой нет.
+UNLOAD_RETURN_RATIO = 0.45
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,25 +54,36 @@ class ModelProfile:
     reasoning_effort: str | None    # что передавать в reasoning_effort ("none" — без рассуждений)
     note: str = ""
     vision: bool = True             # можно ли отправлять кадр (у некоторых моделей с кадром ломается формат ответа)
+    peak_mib: float | None = None       # измеренный пик падения MemAvailable: загрузка (контекст 8192) + запрос с кадром
+    loaded_mib: float | None = None     # измеренное падение MemAvailable после загрузки — столько вернёт выгрузка
+    sec_per_clip: float | None = None   # измеренное время текстов клипа (один запрос с кадром) в пайплайне
 
 
 # Составлено по замерам docs/llm_benchmark.md (свой видео-материал, рассуждения выключены).
+# Память (docs/llm_selection.md): peak_mib — наибольший измеренный пик падения MemAvailable с кадром (замер
+# 2026-09-24 с контекстом 16384 — выше, чем при рабочих 8192, то есть с запасом); loaded_mib — падение после
+# загрузки с контекстом 8192 (2026-09-27, scripts/measure_llm_memory.py): столько вернёт выгрузка.
+# sec_per_clip — тексты клипа одним запросом с кадром в пайплайне (docs/llm_combined.md).
 # Модели, которых здесь нет, идут после этих (не измерены) — по размеру.
+GIB_MIB = 1024
 DEFAULT_PROFILES: tuple[ModelProfile, ...] = (
     ModelProfile(
         "gemma-4-26b-a4b", 1, "none",
         "быстрая (25 с/клип, с кадром 38 с), ровный формат в обоих режимах, самый низкий пик памяти, "
         "с кадром описывает реально видимое",
+        peak_mib=11.8 * GIB_MIB, loaded_mib=7.4 * GIB_MIB, sec_per_clip=31,
     ),
     ModelProfile(
         "qwen3.6-35b-a3b", 2, "none",
         "быстрая (28–37 с/клип) и яркие заголовки, но самая тяжёлая (20.6 ГиБ, загрузка ~105 с); с кадром "
         "ломает формат (хештегов 14–21 вместо 30, короткое описание) — кадр не отправляется",
         vision=False,
+        peak_mib=13.2 * GIB_MIB, loaded_mib=9.6 * GIB_MIB, sec_per_clip=33,
     ),
     ModelProfile(
         "qwen3.8-27b", 3, "none",
-        "плотная 27B: 100+ с/клип (с кадром 180 с) и пик памяти до 17 ГиБ без выигрыша в качестве",
+        "плотная 27B: 124–194 с/клип с кадром, пик памяти до 16.8 ГиБ без выигрыша в качестве, зависала на кадрах",
+        peak_mib=16.8 * GIB_MIB, loaded_mib=9.8 * GIB_MIB, sec_per_clip=170,
     ),
 )
 
@@ -96,17 +120,63 @@ def read_mem_available_mib(meminfo_path: Path = Path("/proc/meminfo")) -> float:
     raise RuntimeError("MemAvailable не найден в /proc/meminfo")
 
 
-def estimate_footprint_mib(model: ModelInfo) -> float:
-    size_mib = (model.size_bytes or 0) / MIB
-    return size_mib * FOOTPRINT_RATIO + KV_CACHE_MIB
-
-
 def _profile_for(key: str, profiles: tuple[ModelProfile, ...]) -> ModelProfile | None:
     lowered = key.lower()
     for profile in profiles:
         if profile.key_part.lower() in lowered:
             return profile
     return None
+
+
+def estimate_footprint_mib(model: ModelInfo, profiles: tuple[ModelProfile, ...] | None = None) -> float:
+    """Сколько памяти модель займёт на пике: измеренное (профиль) или оценка по размеру файла."""
+    profile = _profile_for(model.key, DEFAULT_PROFILES if profiles is None else profiles)
+    if profile is not None and profile.peak_mib is not None:
+        return profile.peak_mib
+    size_mib = (model.size_bytes or 0) / MIB
+    return size_mib * FOOTPRINT_RATIO + KV_CACHE_MIB
+
+
+def returned_by_unload_mib(model: ModelInfo, profiles: tuple[ModelProfile, ...] | None = None) -> float:
+    """Сколько MemAvailable вернёт выгрузка этой (загруженной) модели."""
+    profile = _profile_for(model.key, DEFAULT_PROFILES if profiles is None else profiles)
+    if profile is not None and profile.loaded_mib is not None:
+        return profile.loaded_mib
+    return (model.size_bytes or 0) / MIB * UNLOAD_RETURN_RATIO
+
+
+_PARAMS = re.compile(r"(\d+(?:\.\d+)?)\s*B", re.IGNORECASE)
+
+
+def active_params_b(model: ModelInfo) -> float | None:
+    """Активные параметры, млрд: "26B-A4B" -> 4 (MoE), "27B" -> 27 (плотная). Скорость генерации растёт
+    обратно им, поэтому это мерило скорости для моделей без замера. Нет params_string — None."""
+    if not model.params:
+        return None
+    found = [float(x) for x in _PARAMS.findall(model.params)]
+    if not found:
+        return None
+    moe = re.search(r"A(\d+(?:\.\d+)?)\s*B", model.params, re.IGNORECASE)
+    return float(moe.group(1)) if moe else found[0]
+
+
+def _speed_hint(model: ModelInfo, profile: ModelProfile | None) -> str:
+    if profile is not None and profile.sec_per_clip is not None:
+        return f"~{profile.sec_per_clip:.0f} с/клип"
+    active = active_params_b(model)
+    return f"{active:g}B активных" if active is not None else "скорость неизвестна"
+
+
+def not_slower(candidate: ModelInfo, than: ModelInfo, profiles: tuple[ModelProfile, ...]) -> bool:
+    """Запасная модель не должна быть медленнее той, которую заменяет. Сравнение по замерам, иначе по
+    активным параметрам; если сравнить нечем — допускается (о скорости ничего не известно)."""
+    cand_p, than_p = _profile_for(candidate.key, profiles), _profile_for(than.key, profiles)
+    if cand_p and than_p and cand_p.sec_per_clip is not None and than_p.sec_per_clip is not None:
+        return cand_p.sec_per_clip <= than_p.sec_per_clip
+    cand_a, than_a = active_params_b(candidate), active_params_b(than)
+    if cand_a is not None and than_a is not None:
+        return cand_a <= than_a
+    return True
 
 
 def default_reasoning_effort(model: ModelInfo) -> str | None:
@@ -116,9 +186,13 @@ def default_reasoning_effort(model: ModelInfo) -> str | None:
     return "none" if model.supports_reasoning_control else None
 
 
-def available_after_unload_mib(models: list[ModelInfo], mem_available_mib: float) -> float:
-    """MemAvailable + оценка памяти, которую вернёт выгрузка уже загруженных LLM."""
-    return mem_available_mib + sum(estimate_footprint_mib(m) for m in models if m.loaded_instances)
+def available_after_unload_mib(
+    models: list[ModelInfo], mem_available_mib: float, profiles: tuple[ModelProfile, ...] | None = None
+) -> float:
+    """MemAvailable + память, которую вернёт выгрузка уже загруженных LLM (по замеру, иначе нижняя оценка).
+    Загруженная модель «бесплатной» не считается: её нужная память в select_model полная, а занятое ею
+    возвращается сюда — только так уже загруженная тяжёлая модель не выигрывает у лёгкой на пустом месте."""
+    return mem_available_mib + sum(returned_by_unload_mib(m, profiles) for m in models if m.loaded_instances)
 
 
 def select_model(
@@ -127,7 +201,9 @@ def select_model(
     override: str | None = None,
     reserve_mib: float = DEFAULT_PIPELINE_RESERVE_MIB,
     profiles: tuple[ModelProfile, ...] | None = None,
+    penalized: frozenset[str] | set[str] = frozenset(),
 ) -> Selection:
+    """penalized — модели, недавно не ответившие за таймаут: идут после остальных (не исключаются)."""
     profiles = DEFAULT_PROFILES if profiles is None else profiles
     by_key = {m.key: m for m in models}
 
@@ -151,52 +227,74 @@ def select_model(
             "В LM Studio нет чат-моделей (только embedding). Скачайте LLM во вкладке Discover."
         )
 
-    def sort_key(model: ModelInfo) -> tuple[int, float, float]:
+    def need(model: ModelInfo) -> float:
+        return estimate_footprint_mib(model, profiles)
+
+    def sort_key(model: ModelInfo) -> tuple[bool, int, float, float]:
         profile = _profile_for(model.key, profiles)
+        demoted = model.key in penalized
         if profile:
-            return (0, profile.rank, 0.0)
-        return (1, 0.0, -(model.size_bytes or 0))   # неизвестные — после известных, крупные раньше
+            return (demoted, 0, profile.rank, 0.0)
+        return (demoted, 1, 0.0, -(model.size_bytes or 0))   # неизвестные — после известных, крупные раньше
 
     ranked = sorted(chat_models, key=sort_key)
     budget_mib = available_mib - reserve_mib
     skipped: list[str] = []
+    too_slow: list[str] = []
+    replaced: ModelInfo | None = None     # лучшая по рейтингу из не влезших: запасная не должна быть медленнее её
 
-    for model in ranked:
-        # available_mib — память, доступная, если выгрузить уже загруженные LLM (её считает
-        # вызывающий код: MemAvailable + их занятое), поэтому нужная память всегда полная
-        need_mib = estimate_footprint_mib(model)
-        if need_mib <= budget_mib:
-            profile = _profile_for(model.key, profiles)
-            effort = profile.reasoning_effort if profile else default_reasoning_effort(model)
-            place = f"место {ranked.index(model) + 1} из {len(ranked)}"
-            rating = (
-                ("запасная вне рейтинга (не измерена), лучшая из помещающихся" if skipped else "вне рейтинга (не измерена)")
-                if profile is None
-                else "лучшая в рейтинге" if not skipped else "лучшая из помещающихся"
+    for place, model in enumerate(ranked, start=1):
+        need_mib = need(model)
+        profile = _profile_for(model.key, profiles)
+        if need_mib > budget_mib:
+            skipped.append(f"{model.key} (нужно ~{need_mib / 1024:.1f} ГиБ > {budget_mib / 1024:.1f})")
+            replaced = replaced or model
+            continue
+        if replaced is not None and not not_slower(model, replaced, profiles):
+            too_slow.append(
+                f"{model.key} (помещается, но медленнее {replaced.key}: "
+                f"{_speed_hint(model, profile)} против {_speed_hint(replaced, _profile_for(replaced.key, profiles))})"
             )
-            reason = (
-                f"{'уже загружена; ' if model.loaded_instances else ''}"
-                f"{rating} ({place}), "
-                f"нужно ~{need_mib / 1024:.1f} ГиБ, доступно {available_mib / 1024:.1f} ГиБ "
-                f"при резерве {reserve_mib / 1024:.1f} ГиБ под пайплайн"
-            )
-            if skipped:
-                reason += "; не поместились: " + ", ".join(skipped)
-            if excluded:
-                reason += "; исключены не-чат модели: " + ", ".join(excluded)
-            return Selection(
-                model_key=model.key,
-                reasoning_effort=effort,
-                supports_vision=model.vision and (profile.vision if profile else True),
-                reason=reason,
-                already_loaded=bool(model.loaded_instances),
-            )
-        skipped.append(f"{model.key} (нужно ~{need_mib / 1024:.1f} ГиБ > {budget_mib / 1024:.1f})")
+            continue
+        effort = profile.reasoning_effort if profile else default_reasoning_effort(model)
+        rating = (
+            ("запасная вне рейтинга (не измерена), лучшая из помещающихся (меньше и не медленнее)" if replaced else "вне рейтинга (не измерена)")
+            if profile is None
+            else "лучшая в рейтинге" if replaced is None else "лучшая из помещающихся (меньше и не медленнее)"
+        )
+        reason = (
+            f"{'уже загружена; ' if model.loaded_instances else ''}"
+            f"{rating} (место {place} из {len(ranked)}), "
+            f"нужно ~{need_mib / 1024:.1f} ГиБ, доступно {available_mib / 1024:.1f} ГиБ "
+            f"при резерве {reserve_mib / 1024:.1f} ГиБ под пайплайн"
+        )
+        if skipped:
+            reason += "; не поместились: " + ", ".join(skipped)
+        if too_slow:
+            reason += "; не взяты: " + ", ".join(too_slow)
+        demoted = [m.key for m in ranked if m.key in penalized]
+        if demoted:
+            reason += "; понижены за недавний таймаут: " + ", ".join(demoted)
+        if excluded:
+            reason += "; исключены не-чат модели: " + ", ".join(excluded)
+        return Selection(
+            model_key=model.key,
+            reasoning_effort=effort,
+            supports_vision=model.vision and (profile.vision if profile else True),
+            reason=reason,
+            already_loaded=bool(model.loaded_instances),
+        )
 
-    lightest = min(chat_models, key=estimate_footprint_mib)
+    # Ничего не подошло. Цифры для интерфейса — по самой лёгкой из допустимых (медленные запасные не в счёт):
+    # именно ей нужно освободить память.
+    allowed = [m for m in chat_models if replaced is None or m is replaced or not_slower(m, replaced, profiles)]
+    lightest = min(allowed, key=need)
+    message = (
+        f"Ни одна подходящая LLM не помещается в память: доступно {available_mib / 1024:.1f} ГиБ, "
+        f"резерв под пайплайн {reserve_mib / 1024:.1f} ГиБ. " + "; ".join(skipped)
+    )
+    if too_slow:
+        message += "; не взяты как запасные: " + "; ".join(too_slow)
     raise NoSuitableModelError(
-        f"Ни одна LLM не помещается в память: доступно {available_mib / 1024:.1f} ГиБ, "
-        f"резерв под пайплайн {reserve_mib / 1024:.1f} ГиБ. " + "; ".join(skipped),
-        need_mib=estimate_footprint_mib(lightest), available_mib=available_mib, reserve_mib=reserve_mib,
-        lightest_key=lightest.key,
+        message, need_mib=need(lightest), available_mib=available_mib, reserve_mib=reserve_mib, lightest_key=lightest.key,
     )

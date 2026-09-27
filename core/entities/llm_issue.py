@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class LLMIssue:
-    kind: str                       # no_memory | unavailable | no_models | request_failed | partial
+    kind: str                       # no_memory | unavailable | no_models | timeout | request_failed | partial
     message: str                    # что случилось и с цифрами (нужно / свободно)
     hint: str                       # что можно сделать
     need_gib: float | None = None

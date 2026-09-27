@@ -54,6 +54,8 @@ def main() -> None:
     parser.add_argument("--separate-llm", action="store_true", help="тексты клипа тремя запросами (как до объединения), для сравнения")
     parser.add_argument("--separate-decode", action="store_true", help="сцены и сканирование читают видео по отдельности (как до общего прохода), для сравнения")
     parser.add_argument("--model", help="ключ модели LM Studio (иначе выбирает селектор по памяти)")
+    parser.add_argument("--llm-timeout", type=float, default=None,
+                        help="предел одного запроса к LLM, с (по умолчанию — как в приложении)")
     parser.add_argument("--json")
     parser.add_argument("--encoder", choices=("auto", "vaapi", "x264"), default="auto")
     parser.add_argument("--max-clips", type=int, default=0, help="0 — сколько выберет пайплайн")
@@ -69,7 +71,7 @@ def main() -> None:
         from llm.lm_studio_provider import LMStudioConfig
         from llm.managed_provider import ManagedLMStudio
 
-        llm = ManagedLMStudio(LMStudioConfig(base_url="http://localhost:1234/v1", timeout_sec=300, model_override=args.model))
+        llm = ManagedLMStudio(LMStudioConfig(base_url="http://localhost:1234/v1", timeout_sec=args.llm_timeout or LMStudioConfig().timeout_sec, model_override=args.model))
         llm.start_loading_in_background()
 
     if args.fake_llm_sec > 0:

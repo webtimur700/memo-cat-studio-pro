@@ -38,6 +38,15 @@ class LLMUnavailableError(LLMRequestError):
     """Сервер LM Studio недоступен (не запущен / сеть / таймаут)."""
 
 
+class LLMTimeoutError(LLMUnavailableError):
+    """Модель не ответила за timeout_sec: зависла или слишком медленная для этой машины."""
+
+    def __init__(self, message: str, model: str, timeout_sec: float) -> None:
+        super().__init__(message)
+        self.model = model
+        self.timeout_sec = timeout_sec
+
+
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
@@ -60,7 +69,10 @@ def strip_reasoning(text: str) -> str:
 @dataclass(frozen=True, slots=True)
 class LMStudioConfig:
     base_url: str = "http://localhost:1234/v1"
-    timeout_sec: float = 120.0
+    # Предел одного запроса. Gemma 4 26B укладывается в 25–40 с (холодный первый клип до ~75 с), поэтому 90 с —
+    # с запасом; дольше — модель зависла или не по силам машине (Qwen3.8-27B: 140–190 с): клип получает заголовки
+    # по умолчанию, модель понижается в рейтинге (llm/model_health.py).
+    timeout_sec: float = 90.0
     model_override: str | None = None
     # "none" отключает рассуждения (reasoning_effort в /v1/chat/completions), "low"/"medium"
     # ограничивает; None — не передавать параметр (поведение модели по умолчанию).
@@ -190,6 +202,10 @@ class LMStudioProvider(LLMProvider):
                 raise LLMRequestError(f"LM Studio ({model}) отклонила запрос: HTTP {exc.code} {detail}") from exc
             raise LLMUnavailableError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
         except (urllib.error.URLError, TimeoutError) as exc:
+            if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
+                raise LLMTimeoutError(
+                    f"Модель {model} не ответила за {self._config.timeout_sec:.0f} с", model, self._config.timeout_sec
+                ) from exc
             raise LLMUnavailableError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
 
         self.last_usage = payload.get("usage", {}) or {}

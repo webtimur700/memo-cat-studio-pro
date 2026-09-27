@@ -30,6 +30,7 @@ from core.entities.llm_issue import LLMIssue
 from core.entities.settings import UserSettings
 from llm.lm_studio_provider import LMStudioConfig
 from llm.managed_provider import ManagedLMStudio
+from llm.model_health import ModelHealth
 from database.db import Database
 from database.repositories.history_repository import STATUS_LABELS, HistoryRepository
 from database.repositories.settings_repository import SettingsRepository
@@ -91,6 +92,7 @@ class MainWindow(QMainWindow):
             LMStudioConfig.from_env(PROJECT_ROOT / ".env"),
             reserve_mib=self._settings.llm.pipeline_reserve_gb * 1024,
             on_issue=self._llm_issue_found.emit,
+            health=ModelHealth(DB_PATH.with_name("llm_model_health.json")),   # таймауты моделей переживают перезапуск
         )
 
         central = QWidget()

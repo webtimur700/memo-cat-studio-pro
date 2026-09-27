@@ -41,4 +41,6 @@ assets/music/*
 
 # Локальная база SQLite (настройки, проекты, история) — у каждого своя
 database/*.db
+# штрафы LLM-моделей за таймауты (llm/model_health.py) — состояние конкретной машины
+database/llm_model_health.json
 database/*.db-*

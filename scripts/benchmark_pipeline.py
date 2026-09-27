@@ -115,7 +115,7 @@ def main() -> None:
         baseline = meminfo()["MemAvailable"]
         baseline_gtt = gpu_mib("mem_info_gtt_used")
 
-        llm = ManagedLMStudio(LMStudioConfig(base_url=BASE_URL, model_override=model_key, use_vision=not args.no_vision, timeout_sec=900))
+        llm = ManagedLMStudio(LMStudioConfig(base_url=BASE_URL, model_override=model_key, use_vision=not args.no_vision))   # таймаут как в приложении
         stage_times: dict[str, float] = {}
         t0 = time.time()
 
