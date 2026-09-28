@@ -60,6 +60,7 @@ from subtitles.subtitle_service import group_words_into_segments
 from video.ffmpeg_wrapper import FFmpegWrapper
 from video.frame_extractor import FrameExtractor
 from video.frame_timing import make_cfr_proxy, probe_frame_timing
+from video.hdr import hdr_transfer, tonemapped_frame
 from video.ingestion_service import IngestionService
 from video.scene_detector import SceneDetector
 from video.shared_decode import SharedPass, scan_indices_supported
@@ -702,13 +703,26 @@ class PipelineRunner:
         (_build_crop_samples смотрит те же кадры), тогда видео повторно не читается."""
         candidate, self._cover_candidate = self._cover_candidate, None
         if candidate is not None and candidate[:3] == (video_path, moment.start_sec, moment.end_sec):
-            return candidate[3], candidate[4]
+            return self._sdr_cover_frame(video_path, (candidate[3], candidate[4]))
         try:
             with FrameExtractor(self._frames_source(video_path)) as extractor:
-                return extractor.best_frame_for_cover(moment.start_sec, moment.end_sec)
+                return self._sdr_cover_frame(video_path, extractor.best_frame_for_cover(moment.start_sec, moment.end_sec))
         except Exception as exc:
             logger.warning("Кадр обложки для момента {:.1f}s не получен: {}", moment.start_sec, exc)
             return None
+
+    @staticmethod
+    def _sdr_cover_frame(video_path: Path, cover: tuple[float, np.ndarray]) -> tuple[float, np.ndarray]:
+        """HDR-исходник: OpenCV отдаёт кадр без тонмаппинга (блёклый) — обложка и кадр для LLM берутся тем же кадром
+        через ffmpeg с тонмаппингом, что и клип (video/hdr.py). Не получилось — остаётся кадр OpenCV (warning)."""
+        if hdr_transfer(video_path.resolve()) is None:
+            return cover
+        timestamp, frame = cover
+        try:
+            return timestamp, tonemapped_frame(video_path.resolve(), timestamp, frame.shape[1], frame.shape[0])
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            logger.warning("HDR-кадр обложки {:.2f} с без тонмаппинга: {}", timestamp, exc)
+            return cover
 
     def _llm_model_name(self) -> str | None:
         selection = getattr(self._llm_provider, "selection", None)

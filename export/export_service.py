@@ -30,6 +30,7 @@ from core.entities.settings import ExportSettings
 from export.frame_effects import apply_effects_to_video
 from effects.branding_overlay import BrandingOverlay
 from export.dynamic_crop import CropSample, build_dynamic_crop_filter
+from video.hdr import TONEMAP_CHAIN, hdr_transfer
 from effects.overlay_layers import OverlayLayer, render_overlay_layers
 from export.encoder import build_encoder_args, resolve_encoder
 from export.quality_presets import resolve_quality_preset
@@ -131,6 +132,11 @@ class ExportService:
 
         # fps первым: лишние кадры источника (60 fps) отбрасываются до дорогих crop/scale/ass
         head = [f"fps={fps}", build_dynamic_crop_filter(plan.crop_samples), f"scale={plan.settings.width}:{plan.settings.height}"]
+        transfer = hdr_transfer(plan.source_path.resolve())
+        if transfer is not None:
+            # HDR (HLG/PQ, 10 бит): без тонмаппинга клип выходит блёклым — в SDR BT.709 до кропа (video/hdr.py)
+            head.insert(1, TONEMAP_CHAIN)
+            logger.info("Исходник HDR ({}): тонмаппинг в SDR BT.709 для {}", transfer, plan.output_path.name)
         if ass_filter and not defer_subtitles:
             head.append(ass_filter)
         head_chain = ",".join(head)
