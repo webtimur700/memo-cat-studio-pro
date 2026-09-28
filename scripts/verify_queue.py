@@ -5,6 +5,8 @@
 
 --reserve-mib: сколько памяти оставить пайплайну при выборе LLM (по умолчанию как в приложении, 6 ГиБ).
 --abort-below-mib: аварийно остановить прогон и выгрузить LLM, если MemAvailable упадёт ниже (по умолчанию 1024).
+--low-memory-mib: порог свободной памяти, ниже которого модель перезагружается ради кэша промптов LM Studio
+                  (по умолчанию как в приложении: 3/4 запаса под пайплайн).
 
 LM Studio должна быть запущена на localhost:1234. Клипы пишутся в OUT_DIR (не в export/output).
 """
@@ -37,7 +39,7 @@ def mem_available_mib() -> int:
 
 def main() -> None:
     args = sys.argv[1:]
-    options = {"--reserve-mib": None, "--abort-below-mib": 1024}
+    options = {"--reserve-mib": None, "--abort-below-mib": 1024, "--low-memory-mib": None}
     for name in options:
         if name in args:
             i = args.index(name)
@@ -53,11 +55,14 @@ def main() -> None:
     api.load_model = lambda *a, **k: (calls.__setitem__("llm_load", calls["llm_load"] + 1), orig_load(*a, **k))[1]
     api.unload_model = lambda *a, **k: (calls.__setitem__("llm_unload", calls["llm_unload"] + 1), orig_unload(*a, **k))[1]
 
-    if options["--reserve-mib"] is not None:
+    if options["--reserve-mib"] is not None or options["--low-memory-mib"] is not None:
         from llm.managed_provider import ManagedLMStudio
 
-        reserve = options["--reserve-mib"]
-        mw.ManagedLMStudio = lambda config, reserve_mib=None, on_issue=None: ManagedLMStudio(config, reserve_mib=reserve, on_issue=on_issue)
+        def managed(config, reserve_mib=None, **kwargs):
+            reserve = options["--reserve-mib"] if options["--reserve-mib"] is not None else reserve_mib
+            return ManagedLMStudio(config, reserve_mib=reserve, low_memory_mib=options["--low-memory-mib"], **kwargs)
+
+        mw.ManagedLMStudio = managed
 
     app = QApplication([])
     window = mw.MainWindow()
@@ -98,7 +103,8 @@ def main() -> None:
     print(f"время: {total:.0f}s, пик одновременных задач: {peak_running}")
     print(f"MemAvailable: старт {mem_start} МиБ, минимум {min_mem} МиБ (пик падения {mem_start - min_mem} МиБ)")
     sm = window._shared_models
-    print(f"загрузок YOLO: {sm.detector_loads}, Whisper: {sm.transcriber_loads}, LLM load: {calls['llm_load']}, LLM unload: {calls['llm_unload']}")
+    print(f"загрузок YOLO: {sm.detector_loads}, Whisper: {sm.transcriber_loads}, LLM load: {calls['llm_load']}, LLM unload: {calls['llm_unload']}, "
+          f"перезагрузок LLM ради памяти: {window._llm.reloads}")
     print("баннер очереди:", window.batch_view.banner_text() or "—")
     for j in ids:
         print(f"заметка {j}:", window.batch_view.warning_text(j) or "—")

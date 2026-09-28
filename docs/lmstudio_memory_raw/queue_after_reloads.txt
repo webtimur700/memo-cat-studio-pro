@@ -1,0 +1,12 @@
+2026-09-28 09:07:16.248 | WARNING  | llm.managed_provider:_maybe_reload_for_memory:260 - LLM: свободно 11.0 ГиБ < 11.0 ГиБ, LM Studio с загрузки выросла на 1.0 ГиБ (кэш промптов llama-server) — перезагружаю google/gemma-4-26b-a4b после 3 запросов, чтобы вернуть память
+2026-09-28 09:07:47.800 | INFO     | llm.managed_provider:_maybe_reload_for_memory:279 - LLM: google/gemma-4-26b-a4b перезагружена за 32 с, свободно 12.8 ГиБ
+2026-09-28 09:10:28.802 | WARNING  | llm.managed_provider:_maybe_reload_for_memory:260 - LLM: свободно 10.7 ГиБ < 11.0 ГиБ, LM Studio с загрузки выросла на 2.2 ГиБ (кэш промптов llama-server) — перезагружаю google/gemma-4-26b-a4b после 6 запросов, чтобы вернуть память
+2026-09-28 09:12:19.920 | INFO     | llm.managed_provider:_maybe_reload_for_memory:279 - LLM: google/gemma-4-26b-a4b перезагружена за 111 с, свободно 13.2 ГиБ
+2026-09-28 09:18:20.497 | WARNING  | llm.managed_provider:_maybe_reload_for_memory:260 - LLM: свободно 10.9 ГиБ < 11.0 ГиБ, LM Studio с загрузки выросла на 1.0 ГиБ (кэш промптов llama-server) — перезагружаю google/gemma-4-26b-a4b после 3 запросов, чтобы вернуть память
+2026-09-28 09:19:09.970 | INFO     | llm.managed_provider:_maybe_reload_for_memory:279 - LLM: google/gemma-4-26b-a4b перезагружена за 49 с, свободно 12.4 ГиБ
+2026-09-28 09:22:19.985 | WARNING  | llm.managed_provider:_maybe_reload_for_memory:260 - LLM: свободно 10.8 ГиБ < 11.0 ГиБ, LM Studio с загрузки выросла на 1.6 ГиБ (кэш промптов llama-server) — перезагружаю google/gemma-4-26b-a4b после 6 запросов, чтобы вернуть память
+2026-09-28 09:22:50.821 | INFO     | llm.managed_provider:_maybe_reload_for_memory:279 - LLM: google/gemma-4-26b-a4b перезагружена за 31 с, свободно 12.5 ГиБ
+2026-09-28 09:29:08.913 | WARNING  | llm.managed_provider:_maybe_reload_for_memory:260 - LLM: свободно 10.6 ГиБ < 11.0 ГиБ, LM Studio с загрузки выросла на 1.1 ГиБ (кэш промптов llama-server) — перезагружаю google/gemma-4-26b-a4b после 4 запросов, чтобы вернуть память
+2026-09-28 09:29:51.006 | INFO     | llm.managed_provider:_maybe_reload_for_memory:279 - LLM: google/gemma-4-26b-a4b перезагружена за 42 с, свободно 12.6 ГиБ
+2026-09-28 09:31:53.135 | WARNING  | llm.managed_provider:_maybe_reload_for_memory:260 - LLM: свободно 10.9 ГиБ < 11.0 ГиБ, LM Studio с загрузки выросла на 1.4 ГиБ (кэш промптов llama-server) — перезагружаю google/gemma-4-26b-a4b после 4 запросов, чтобы вернуть память
+2026-09-28 09:32:25.054 | INFO     | llm.managed_provider:_maybe_reload_for_memory:279 - LLM: google/gemma-4-26b-a4b перезагружена за 32 с, свободно 12.5 ГиБ

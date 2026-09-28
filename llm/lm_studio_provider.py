@@ -138,10 +138,12 @@ class LMStudioProvider(LLMProvider):
         return available[0]
 
     def complete(
-        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None,
+        timeout_sec: float | None = None,
     ) -> str:
-        """images — JPEG-кадры (vision-модели): уходят data-URL'ами вместе с текстом."""
-        return self._chat(system_prompt, user_prompt, max_tokens, images, None)
+        """images — JPEG-кадры (vision-модели): уходят data-URL'ами вместе с текстом. timeout_sec — предел этого
+        запроса вместо config.timeout_sec (первый запрос после загрузки модели холодный и дольше)."""
+        return self._chat(system_prompt, user_prompt, max_tokens, images, None, timeout_sec)
 
     def complete_json(
         self,
@@ -151,11 +153,12 @@ class LMStudioProvider(LLMProvider):
         max_tokens: int = 2048,
         images: list[bytes] | None = None,
         schema_name: str = "response",
+        timeout_sec: float | None = None,
     ) -> str:
         """Как complete(), но ответ ограничен JSON-схемой (structured output LM Studio: response_format=json_schema).
         Возвращает текст JSON; разбирает его вызывающий. Сервер без поддержки схемы (HTTP 400) — LLMRequestError."""
         response_format = {"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": schema}}
-        return self._chat(system_prompt, user_prompt, max_tokens, images, response_format)
+        return self._chat(system_prompt, user_prompt, max_tokens, images, response_format, timeout_sec)
 
     def _chat(
         self,
@@ -164,8 +167,10 @@ class LMStudioProvider(LLMProvider):
         max_tokens: int,
         images: list[bytes] | None,
         response_format: dict | None,
+        timeout_sec: float | None = None,
     ) -> str:
         model = self._resolve_model()
+        timeout = timeout_sec or self._config.timeout_sec
         url = f"{self._config.base_url}/chat/completions"
 
         user_content: object = user_prompt
@@ -194,7 +199,7 @@ class LMStudioProvider(LLMProvider):
         )
 
         try:
-            with _LOCAL_OPENER.open(request, timeout=self._config.timeout_sec) as response:
+            with _LOCAL_OPENER.open(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code in (400, 422):   # сервер отверг сам запрос (схема, кадр), он при этом доступен
@@ -204,7 +209,7 @@ class LMStudioProvider(LLMProvider):
         except (urllib.error.URLError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
                 raise LLMTimeoutError(
-                    f"Модель {model} не ответила за {self._config.timeout_sec:.0f} с", model, self._config.timeout_sec
+                    f"Модель {model} не ответила за {timeout:.0f} с", model, timeout
                 ) from exc
             raise LLMUnavailableError(f"Ошибка запроса к LM Studio ({model}): {exc}") from exc
 

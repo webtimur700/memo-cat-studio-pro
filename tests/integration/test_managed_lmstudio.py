@@ -255,11 +255,12 @@ def test_success_clears_the_issue_and_reserve_can_be_lowered_from_settings(lm_se
 
 def test_timeout_demotes_the_model_reports_it_and_reselects_another(lm_server, tmp_path):
     state, url = lm_server
-    state.slow_models = {"vendor/big-vision"}
     seen = []
     health = ModelHealth(tmp_path / "health.json")
     managed = ManagedLMStudio(LMStudioConfig(base_url=url, timeout_sec=0.3), reserve_mib=1024,
                               mem_reader=lambda: 64 * 1024, on_issue=seen.append, health=health)
+    managed.complete("s", "u")                     # первый (холодный) запрос прошёл
+    state.slow_models = {"vendor/big-vision"}      # дальше модель «зависает»
     with pytest.raises(LLMTimeoutError):
         managed.complete("s", "u")
     assert managed.issue.kind == "timeout" and "vendor/big-vision" in managed.issue.message
@@ -297,3 +298,71 @@ def test_model_health_penalty_expires():
     assert health.penalized() == {"m"}
     clock[0] += 61
     assert health.penalized() == frozenset()
+
+
+class _Memory:
+    """Подменяемые показания: свободная память системы и память процессов LM Studio (МиБ)."""
+
+    def __init__(self, free, lms):
+        self.free, self.lms = free, lms
+
+
+def _guarded(url, memory, **kwargs):
+    return ManagedLMStudio(LMStudioConfig(base_url=url), reserve_mib=1024, mem_reader=lambda: memory.free,
+                           lms_memory_reader=lambda: memory.lms, **kwargs)
+
+
+def test_model_is_reloaded_when_lm_studio_cache_eats_the_pipeline_memory(lm_server):
+    state, url = lm_server
+    memory = _Memory(free=64 * 1024, lms=500)
+    managed = _guarded(url, memory, low_memory_mib=4096)
+    managed.complete("s", "u")                               # загрузка + первый запрос
+    assert len(state.load_calls) == 1
+    memory.lms, memory.free = 500 + 3000, 3000               # кэш промптов вырос на 3 ГиБ, свободно меньше порога
+    managed.complete("s", "u")
+    assert state.unload_calls == ["vendor/big-vision"] and len(state.load_calls) == 2 and managed.reloads == 1
+    assert state.loaded == ["vendor/big-vision"]
+    memory.free = 3000                                       # после перезагрузки база обновилась: роста нет — не трогаем
+    managed.complete("s", "u")
+    assert managed.reloads == 1
+    managed.release()
+    assert state.loaded == []
+
+
+def test_no_reload_while_memory_is_enough_or_lm_studio_did_not_grow(lm_server):
+    state, url = lm_server
+    memory = _Memory(free=64 * 1024, lms=500)
+    managed = _guarded(url, memory, low_memory_mib=4096)
+    managed.complete("s", "u")
+    memory.lms = 500 + 5000                                  # вырос, но памяти хватает
+    managed.complete("s", "u")
+    memory.lms, memory.free = 500 + 200, 3000                # памяти мало, но съела её не LM Studio
+    managed.complete("s", "u")
+    assert managed.reloads == 0 and len(state.load_calls) == 1
+
+
+def test_default_threshold_is_three_quarters_of_the_pipeline_reserve(lm_server):
+    state, url = lm_server
+    memory = _Memory(free=64 * 1024, lms=500)
+    managed = ManagedLMStudio(LMStudioConfig(base_url=url), reserve_mib=6 * 1024, mem_reader=lambda: memory.free,
+                              lms_memory_reader=lambda: memory.lms)
+    managed.complete("s", "u")
+    memory.lms, memory.free = 500 + 4000, 4.6 * 1024          # выше 4.5 ГиБ — ещё рано
+    managed.complete("s", "u")
+    assert managed.reloads == 0
+    memory.free = 4.4 * 1024
+    managed.complete("s", "u")
+    assert managed.reloads == 1
+
+
+def test_first_request_after_load_gets_a_longer_timeout(lm_server, monkeypatch):
+    """Холодный первый запрос (подкачка весов, сборка конвейеров GPU) дольше обычного: 90 с не должны его обрывать."""
+    import llm.managed_provider as managed_provider
+
+    state, url = lm_server
+    state.slow_models = {"vendor/big-vision"}      # 1 с на ответ
+    monkeypatch.setattr(managed_provider, "FIRST_REQUEST_TIMEOUT_SEC", 5.0)
+    managed = ManagedLMStudio(LMStudioConfig(base_url=url, timeout_sec=0.3), reserve_mib=1024, mem_reader=lambda: 64 * 1024)
+    assert managed.complete("s", "u") == "1. Заголовок"    # первый: предел 5 с
+    with pytest.raises(LLMTimeoutError):
+        managed.complete("s", "u")                           # следующие: обычные 0.3 с

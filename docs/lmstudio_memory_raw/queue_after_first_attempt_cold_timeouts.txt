@@ -1,0 +1,20 @@
+2026-09-28 08:34:10.961 | INFO     | llm.managed_provider:_prepare_unlocked:195 - LLM: выбрана модель google/gemma-4-26b-a4b — лучшая в рейтинге (место 1 из 3), нужно ~11.8 ГиБ, доступно 24.7 ГиБ при резерве 6.0 ГиБ под пайплайн; исключены не-чат модели: text-embedding-nomic-embed-text-v1.5
+2026-09-28 08:34:29.743 | INFO     | llm.managed_provider:_prepare_unlocked:209 - LLM: google/gemma-4-26b-a4b загружена (контекст 8192)
+2026-09-28 08:40:03.170 | WARNING  | llm.model_health:record_failure:61 - LLM: google/gemma-4-26b-a4b понижена в рейтинге: не ответила за 90 с
+2026-09-28 08:40:03.280 | WARNING  | llm.content_generator:call:88 - LLM недоступна: Модель google/gemma-4-26b-a4b не ответила за 90 с — заголовок по умолчанию
+2026-09-28 08:40:03.280 | INFO     | llm.content_generator:generate_clip_content:148 - LLM: тексты клипа готовы за 90.2 с, запросов: 1
+2026-09-28 08:40:03.305 | INFO     | llm.managed_provider:_prepare_unlocked:186 - LLM: в LM Studio уже загружены google/gemma-4-26b-a4b; свободно 12.4 ГиБ, после их выгрузки ~19.8 ГиБ
+2026-09-28 08:40:03.305 | INFO     | llm.managed_provider:_prepare_unlocked:195 - LLM: выбрана модель qwen/qwen3.6-35b-a3b — лучшая в рейтинге (место 1 из 3), нужно ~13.2 ГиБ, доступно 19.8 ГиБ при резерве 6.0 ГиБ под пайплайн; понижены за недавний таймаут: google/gemma-4-26b-a4b; исключены не-чат модели: text-embedding-nomic-em
+2026-09-28 08:40:03.306 | INFO     | llm.managed_provider:_prepare_unlocked:200 - LLM: выгружаю google/gemma-4-26b-a4b (освободить память под qwen/qwen3.6-35b-a3b)
+2026-09-28 08:42:06.053 | INFO     | llm.managed_provider:_prepare_unlocked:209 - LLM: qwen/qwen3.6-35b-a3b загружена (контекст 8192)
+2026-09-28 08:46:19.434 | WARNING  | llm.model_health:record_failure:61 - LLM: qwen/qwen3.6-35b-a3b понижена в рейтинге: не ответила за 90 с
+2026-09-28 08:46:19.638 | WARNING  | llm.content_generator:call:88 - LLM недоступна: Модель qwen/qwen3.6-35b-a3b не ответила за 90 с — заголовок по умолчанию
+2026-09-28 08:46:19.639 | INFO     | llm.content_generator:generate_clip_content:148 - LLM: тексты клипа готовы за 90.3 с, запросов: 1
+2026-09-28 08:46:19.767 | INFO     | llm.managed_provider:_prepare_unlocked:186 - LLM: в LM Studio уже загружены qwen/qwen3.6-35b-a3b; свободно 12.8 ГиБ, после их выгрузки ~22.4 ГиБ
+2026-09-28 08:46:19.768 | INFO     | llm.managed_provider:_prepare_unlocked:195 - LLM: выбрана модель google/gemma-4-26b-a4b — лучшая из помещающихся (меньше и не медленнее) (место 2 из 3), нужно ~11.8 ГиБ, доступно 22.4 ГиБ при резерве 6.0 ГиБ под пайплайн; не поместились: qwen/qwen3.8-27b (нужно ~16.8 ГиБ > 16.4); понижены за 
+2026-09-28 08:46:19.768 | INFO     | llm.managed_provider:_prepare_unlocked:200 - LLM: выгружаю qwen/qwen3.6-35b-a3b (освободить память под google/gemma-4-26b-a4b)
+2026-09-28 08:47:36.418 | INFO     | llm.managed_provider:_prepare_unlocked:209 - LLM: google/gemma-4-26b-a4b загружена (контекст 8192)
+2026-09-28 08:47:55.346 | INFO     | llm.model_health:record_success:68 - LLM: google/gemma-4-26b-a4b ответила — штраф в рейтинге снят
+2026-09-28 08:52:56.980 | INFO     | llm.content_generator:generate_clip_content:148 - LLM: тексты клипа готовы за 42.5 с, запросов: 1 (кадр учтён)
+2026-09-28 08:53:31.656 | INFO     | llm.content_generator:generate_clip_content:148 - LLM: тексты клипа готовы за 34.6 с, запросов: 1 (кадр учтён)
+2026-09-28 08:53:59.846 | INFO     | llm.content_generator:generate_clip_content:148 - LLM: тексты клипа готовы за 28.2 с, запросов: 1 (кадр учтён)

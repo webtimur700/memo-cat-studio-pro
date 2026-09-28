@@ -11,11 +11,18 @@
 продолжает с заголовком по умолчанию. release() выгружает то, что загрузили мы.
 Модель не ответила за таймаут (LLMTimeoutError) — она понижается в рейтинге (llm/model_health.py),
 причина уходит в интерфейс, а модель выбирается заново в фоне (следующее видео очереди пойдёт с ней).
+
+Память LM Studio растёт от клипа к клипу: llama-server хранит KV-состояния прошлых запросов (кэш промптов,
+`--cache-ram`, до 8 ГиБ; через API LM Studio его не очистить и не ограничить). На длинной очереди Gemma доходила до
++5.3 ГиБ сверх памяти после загрузки (docs/lmstudio_memory.md). Если свободной памяти стало меньше
+low_memory_mib, а LM Studio с загрузки выросла хотя бы на MIN_RELOAD_GAIN_MIB, модель перезагружается перед
+запросом (40–70 с) — кэш освобождается. Когда памяти хватает, перезагрузок нет.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import replace
 
 from loguru import logger
@@ -23,6 +30,7 @@ from loguru import logger
 from core.entities.llm_issue import LLMIssue
 from llm import lm_studio_api as api
 from llm.lm_studio_provider import LLMTimeoutError, LLMUnavailableError, LMStudioConfig, LMStudioProvider
+from llm.lmstudio_memory import lmstudio_private_mib
 from llm.model_health import ModelHealth
 from llm.model_selector import (
     DEFAULT_PIPELINE_RESERVE_MIB,
@@ -34,6 +42,15 @@ from llm.model_selector import (
 )
 
 
+# перезагружать, только если это вернёт хотя бы столько (иначе память съел не кэш LM Studio, перезагрузка не поможет)
+MIN_RELOAD_GAIN_MIB = 1024
+# первый запрос после (пере)загрузки модели холодный: веса подкачиваются с диска, Vulkan собирает конвейеры, параллельно
+# идут анализ и кодирование. Замер: 43 с в одном прогоне, больше 90 с в другом — с общим таймаутом 90 с Gemma
+# «зависала» на первом клипе, понижалась, а у следующей модели первый запрос тоже был холодным (docs/lmstudio_memory.md)
+FIRST_REQUEST_TIMEOUT_SEC = 300.0
+LOW_MEMORY_SHARE_OF_RESERVE = 0.75
+
+
 class ManagedLMStudio:
     def __init__(
         self,
@@ -42,9 +59,17 @@ class ManagedLMStudio:
         mem_reader=read_mem_available_mib,
         on_issue=None,
         health: ModelHealth | None = None,
+        low_memory_mib: float | None = None,
+        lms_memory_reader=lmstudio_private_mib,
     ) -> None:
         self._config = config or LMStudioConfig()
         self._health = health or ModelHealth()     # таймауты моделей (понижение в рейтинге)
+        # порог свободной памяти для перезагрузки модели (кэш промптов LM Studio); None — 3/4 запаса под пайплайн
+        self._low_memory_mib = low_memory_mib
+        self._lms_memory_reader = lms_memory_reader
+        self._lms_baseline_mib: float | None = None   # память LM Studio сразу после нашей загрузки модели
+        self._requests_since_load = 0
+        self.reloads = 0                                # сколько раз перезагружали модель ради памяти (для замеров)
         self._reserve_mib = reserve_mib
         self._mem_reader = mem_reader
         self._lock = threading.Lock()              # короткий: только состояние
@@ -184,6 +209,7 @@ class ManagedLMStudio:
             try:
                 instance_id = api.load_model(base_url, selection.model_key, context_length=config.context_length)
                 self._loaded_by_us.append(instance_id)
+                self._mark_loaded()
                 logger.info("LLM: {} загружена (контекст {})", instance_id, config.context_length)
             except api.LMStudioAdminError as exc:
                 # LM Studio без REST-загрузки: полагаемся на JIT-загрузку при первом запросе
@@ -206,10 +232,61 @@ class ManagedLMStudio:
     def last_usage(self) -> dict:
         return self._provider.last_usage if self._provider else {}
 
+    def _mark_loaded(self) -> None:
+        self._lms_baseline_mib = self._lms_memory_reader()
+        self._requests_since_load = 0
+
+    def _low_memory_threshold_mib(self) -> float:
+        return self._low_memory_mib if self._low_memory_mib is not None else self._reserve_mib * LOW_MEMORY_SHARE_OF_RESERVE
+
+    def _maybe_reload_for_memory(self) -> None:
+        """Кэш промптов LM Studio съел память, которую селектор оставлял пайплайну: перезагрузить модель (кэш уходит).
+        Вызывается перед запросом; запросы пайплайна идут по одному (_llm_lock), так что посреди чужого запроса не бывает."""
+        if not self._loaded_by_us or self._requests_since_load == 0:
+            return
+        free, threshold = self._mem_reader(), self._low_memory_threshold_mib()
+        if free >= threshold:
+            return
+        current = self._lms_memory_reader()
+        gain = None if current is None or self._lms_baseline_mib is None else current - self._lms_baseline_mib
+        if gain is not None and gain < MIN_RELOAD_GAIN_MIB:
+            return   # память съел не кэш LM Studio — перезагрузка её не вернёт
+        with self._lifecycle:
+            with self._lock:
+                instances = list(self._loaded_by_us)
+                key = self.selection.model_key if self.selection else None
+            if not instances or key is None:
+                return
+            logger.warning(
+                "LLM: свободно {:.1f} ГиБ < {:.1f} ГиБ, LM Studio с загрузки выросла на {} (кэш промптов llama-server) — "
+                "перезагружаю {} после {} запросов, чтобы вернуть память",
+                free / 1024, threshold / 1024, "?" if gain is None else f"{gain / 1024:.1f} ГиБ", key, self._requests_since_load,
+            )
+            started = time.perf_counter()
+            try:
+                for instance in instances:
+                    api.unload_model(self._config.base_url, instance)
+                with self._lock:
+                    self._loaded_by_us = []
+                instance_id = api.load_model(self._config.base_url, key, context_length=self._config.context_length)
+            except api.LMStudioAdminError as exc:
+                logger.warning("LLM: перезагрузка {} не удалась ({}) — следующий запрос загрузит модель JIT", key, exc)
+                return
+            with self._lock:
+                self._loaded_by_us.append(instance_id)
+            self._mark_loaded()
+            self.reloads += 1
+            logger.info("LLM: {} перезагружена за {:.0f} с, свободно {:.1f} ГиБ", key, time.perf_counter() - started,
+                        self._mem_reader() / 1024)
+
     def _call(self, request):
         provider = self._ensure_ready()
+        self._maybe_reload_for_memory()
+        cold = self._requests_since_load == 0
+        self._requests_since_load += 1
+        timeout = max(FIRST_REQUEST_TIMEOUT_SEC, self._config.timeout_sec) if cold else None
         try:
-            result = request(provider)
+            result = request(provider, timeout)
         except LLMTimeoutError as exc:
             self._on_timeout(provider, exc)
             raise
@@ -240,7 +317,8 @@ class ManagedLMStudio:
         self.start_loading_in_background()
 
     def complete(self, system_prompt: str, user_prompt: str, max_tokens: int = 512, images: list[bytes] | None = None) -> str:
-        return self._call(lambda p: p.complete(system_prompt, user_prompt, max_tokens=max_tokens, images=images))
+        return self._call(lambda p, timeout: p.complete(system_prompt, user_prompt, max_tokens=max_tokens, images=images,
+                                                          timeout_sec=timeout))
 
     def complete_json(
         self,
@@ -251,8 +329,9 @@ class ManagedLMStudio:
         images: list[bytes] | None = None,
         schema_name: str = "response",
     ) -> str:
-        return self._call(lambda p: p.complete_json(
-            system_prompt, user_prompt, schema, max_tokens=max_tokens, images=images, schema_name=schema_name
+        return self._call(lambda p, timeout: p.complete_json(
+            system_prompt, user_prompt, schema, max_tokens=max_tokens, images=images, schema_name=schema_name,
+            timeout_sec=timeout,
         ))
 
     def list_models(self) -> list[str]:
